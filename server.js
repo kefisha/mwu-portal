@@ -420,8 +420,13 @@ app.get('/student-dashboard', async (req, res) => {
     const student = await Student.findOne({ student_id: req.session.studentId });
     if (!student) return res.redirect('/');
 
+    let secCourses = await Course.find({ class_level: student.class_level });
     let secAssessments = await Assessment.find({ section: student.class_level });
     let assessmentHtml = secAssessments.map(a => `<div style="background:#eef9f2; padding:10px; margin-bottom:8px; border:1px solid green;"><b>${a.title}</b><p>${a.description}</p><small>አስተማሪ: ${a.teacherName} | ቀን: ${a.deadline}</small></div>`).join('') || '<p>አሳይንመንት የለም</p>';
+
+    let courseRows = secCourses.map(c => `
+        <tr><td>${c.course_name}</td><td>${c.teacher_name}</td><td>${c.day}</td><td>${c.time}</td><td>${c.room}</td></tr>
+    `).join('') || '<tr><td colspan="5">ኮርስ የለም</td></tr>';
 
     res.send(`
     <!DOCTYPE html>
