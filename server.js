@@ -265,7 +265,7 @@ app.get('/admin', async (req, res) => {
         <table><thead><tr><th>ID</th><th>Pass</th><th>Name</th><th>Dept</th><th>Section</th><th>Action</th></tr></thead><tbody>${teacherRows}</tbody></table></div>
         <div class="card"><h3>🎓 የጸደቁ ተማሪዎች ዝርዝር (Manage & Edit Students)</h3>
         <table><thead><tr><th>ID</th><th>Pass</th><th>Name</th><th>Class</th><th>Action</th></tr></thead><tbody>${studentRows}</tbody></table></div>
-        <a href="/logout" style="color:red; font-weight:bold; font-size:15px;">🔒 Logout</a>
+        <div style="text-align:center; margin-bottom:20px;"><a href="/admin/add-course" style="background:#8e44ad; color:white; padding:12px 20px; text-decoration:none; border-radius:8px; font-weight:bold; display:inline-block;">➕ አዲስ ኮርስ ጨምር</a></div><a href="/logout" style="color:red; font-weight:bold; font-size:15px;">🔒 Logout</a>
     </body></html>
     `);
 });
