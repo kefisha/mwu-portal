@@ -46,6 +46,12 @@ const notificationSchema = new mongoose.Schema({
 });
 const Notification = mongoose.model('Notification', notificationSchema);
 
+const courseSchema = new mongoose.Schema({
+    course_name: String, class_level: String, teacher_name: String,
+    day: String, time: String, room: String
+});
+const Course = mongoose.model('Course', courseSchema);
+
 // ================== UPLOADS ==================
 if (!fs.existsSync('./uploads')) fs.mkdirSync('./uploads');
 
@@ -262,6 +268,37 @@ app.get('/admin', async (req, res) => {
         <a href="/logout" style="color:red; font-weight:bold; font-size:15px;">🔒 Logout</a>
     </body></html>
     `);
+});
+
+app.get('/admin/add-course', async (req, res) => {
+    if (!req.session.isAdminLoggedIn) return res.redirect('/');
+    res.send(`
+    <div style="font-family:sans-serif; padding:20px; max-width:500px; margin:auto;">
+        <h2>📚 አዲስ ኮርስ መፍጠር</h2>
+        <form action="/admin/create-course" method="POST">
+            <label>የኮርስ ስም:</label><br>
+            <input type="text" name="course_name" required style="width:100%; padding:8px; margin-bottom:10px;"><br>
+            <label>ክፍል/ሴክሽን (ለምሳሌ: 1st Year - Section A):</label><br>
+            <input type="text" name="class_level" required style="width:100%; padding:8px; margin-bottom:10px;"><br>
+            <label>የመምህር ስም:</label><br>
+            <input type="text" name="teacher_name" required style="width:100%; padding:8px; margin-bottom:10px;"><br>
+            <label>ቀን (ለምሳሌ: Mon):</label><br>
+            <input type="text" name="day" required style="width:100%; padding:8px; margin-bottom:10px;"><br>
+            <label>ሰዓት (ለምሳሌ: 08:00 - 10:00 AM):</label><br>
+            <input type="text" name="time" required style="width:100%; padding:8px; margin-bottom:10px;"><br>
+            <label>ክፍል ቁጥር/Room:</label><br>
+            <input type="text" name="room" required style="width:100%; padding:8px; margin-bottom:15px;"><br>
+            <button type="submit" style="background:#27ae60; color:white; border:none; padding:12px; width:100%; border-radius:6px; font-weight:bold;">➕ ኮርስ ጨምር</button>
+        </form>
+        <br><a href="/admin">⬅ ወደ Admin ተመለስ</a>
+    </div>`);
+});
+
+app.post('/admin/create-course', async (req, res) => {
+    if (!req.session.isAdminLoggedIn) return res.redirect('/');
+    const { course_name, class_level, teacher_name, day, time, room } = req.body;
+    await Course.create({ course_name, class_level, teacher_name, day, time, room });
+    res.redirect('/admin/add-course');
 });
 
 app.get('/admin/approve-student/:id', async (req, res) => {
