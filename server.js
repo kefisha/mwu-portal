@@ -67,8 +67,7 @@ app.use(session({
 }));
 
 const ADMIN_USER = "amanuel";
-const ADMIN_PASS = "1234";
-
+const ADMIN_PASS = "kefisha123";
 function generateStudentID() { return `MWU-${Math.floor(1000 + Math.random() * 9000)}`; }
 function generate4DigitPIN() { return Math.floor(1000 + Math.random() * 9000).toString(); }
 
