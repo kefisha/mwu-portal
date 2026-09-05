@@ -425,8 +425,8 @@ app.get('/student-dashboard', async (req, res) => {
     let assessmentHtml = secAssessments.map(a => `<div style="background:#eef9f2; padding:10px; margin-bottom:8px; border:1px solid green;"><b>${a.title}</b><p>${a.description}</p><small>አስተማሪ: ${a.teacherName} | ቀን: ${a.deadline}</small></div>`).join('') || '<p>አሳይንመንት የለም</p>';
 
     let courseRows = secCourses.map(c => `
-        <tr><td>${c.course_name}</td><td>${c.teacher_name}</td><td>${c.day}</td><td>${c.time}</td><td>${c.room}</td></tr>
-    `).join('') || '<tr><td colspan="5">ኮርስ የለም</td></tr>';
+        <tr><td style="padding:6px; border:1px solid #ddd;">${c.course_name}</td><td style="padding:6px; border:1px solid #ddd;">${c.teacher_name}</td><td style="padding:6px; border:1px solid #ddd;">${c.day}</td><td style="padding:6px; border:1px solid #ddd;">${c.time}</td><td style="padding:6px; border:1px solid #ddd;">${c.room}</td></tr>
+    `).join('') || '<tr><td colspan="5" style="padding:6px; border:1px solid #ddd;">ኮርስ የለም</td></tr>';
 
     res.send(`
     <!DOCTYPE html>
@@ -436,6 +436,11 @@ app.get('/student-dashboard', async (req, res) => {
     <body><div class="container">
         <h2>🎓 የተማሪ ዳሽቦርድ</h2>
         <p>ስም: <b>${student.name}</b> | ሴክሽን: <b>${student.class_level}</b></p><hr>
+        <h3>📚 የክፍልዎ ኮርሶች (Courses)</h3>
+        <table style="width:100%; border-collapse:collapse; margin-bottom:15px;">
+            <thead><tr style="background:#1f4e79; color:white;"><th style="padding:6px; border:1px solid #ddd;">ኮርስ</th><th style="padding:6px; border:1px solid #ddd;">መምህር</th><th style="padding:6px; border:1px solid #ddd;">ቀን</th><th style="padding:6px; border:1px solid #ddd;">ሰዓት</th><th style="padding:6px; border:1px solid #ddd;">ክፍል</th></tr></thead>
+            <tbody>${courseRows}</tbody>
+        </table>
         <h3>📥 የአስተማሪዎች Assessments</h3>${assessmentHtml}
         <br><a href="/logout" style="color:red; font-weight:bold;">🔒 Logout</a>
     </div></body></html>
