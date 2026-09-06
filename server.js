@@ -26,7 +26,7 @@ const studentSchema = new mongoose.Schema({
     password: String, name: String, father_name: String, mother_name: String,
     gender: String, age: String, phone: String, department: String,
     class_level: String, bank_slip_val: String, photo: String,
-    status: String, admin_message: String
+    status: String, admin_message: String, payment_status: String
 });
 const Student = mongoose.model('Student', studentSchema);
 
@@ -52,6 +52,13 @@ const courseSchema = new mongoose.Schema({
     day: String, time: String, room: String
 });
 const Course = mongoose.model('Course', courseSchema);
+
+const withdrawalSchema = new mongoose.Schema({
+    student_id: String, student_name: String, reason: String,
+    status: { type: String, default: 'Pending' }, admin_response: String,
+    date: String
+});
+const Withdrawal = mongoose.model('Withdrawal', withdrawalSchema);
 
 // ---- NEW SCHEMAS ADDED ----
 const gradeSchema = new mongoose.Schema({
@@ -288,9 +295,10 @@ app.get('/admin', async (req, res) => {
 
     let studentRows = students.map(st => `
         <tr><td>${st.student_id}</td><td>${st.password}</td><td>${st.name}</td><td>${st.class_level}</td>
+        <td>${st.payment_status === 'Verified' ? '✅ Verified' : `<a href="/admin/verify-payment/${st.student_id}" style="background:#f39c12; color:white; padding:3px 6px; text-decoration:none; border-radius:4px;">💰 Verify</a>`}</td>
         <td><a href="/admin/edit-student/${st.student_id}" style="background:#2980b9; color:white; padding:3px 6px; text-decoration:none; border-radius:4px;">✏️ Edit</a>
         <a href="/admin/id-card/${st.student_id}" style="background:#8e44ad; color:white; padding:3px 6px; text-decoration:none; border-radius:4px; margin-left:3px;" target="_blank">🪪 ID</a></td></tr>
-    `).join('') || '<tr><td colspan="5">የጸደቁ ተማሪዎች የሉም</td></tr>';
+    `).join('') || '<tr><td colspan="6">የጸደቁ ተማሪዎች የሉም</td></tr>';
     let notifRows = notifications.map(n => `
         <li style="padding:5px 0; border-bottom:1px dashed #ccc;">🔔 <b>${n.message}</b> <small style="color:#666;">(${n.time})</small></li>
     `).join('') || '<li>ምንም ማሳወቂያ የለም</li>';
@@ -311,7 +319,7 @@ app.get('/admin', async (req, res) => {
         <div class="card"><h3>👨‍🏫 የመምህራን ዝርዝር (Manage & Edit Teachers)</h3>
         <table><thead><tr><th>ID</th><th>Pass</th><th>Name</th><th>Dept</th><th>Section</th><th>Action</th></tr></thead><tbody>${teacherRows}</tbody></table></div>
         <div class="card"><h3>🎓 የጸደቁ ተማሪዎች ዝርዝር (Manage & Edit Students)</h3>
-        <table><thead><tr><th>ID</th><th>Pass</th><th>Name</th><th>Class</th><th>Action</th></tr></thead><tbody>${studentRows}</tbody></table></div>
+        <table><thead><tr><th>ID</th><th>Pass</th><th>Name</th><th>Class</th><th>Payment</th><th>Action</th></tr></thead><tbody>${studentRows}</tbody></table></div>
         <div style="text-align:center; margin-bottom:20px;">
         <a href="/admin/add-course" style="background:#8e44ad; color:white; padding:12px 20px; text-decoration:none; border-radius:8px; font-weight:bold; display:inline-block; margin-right:8px;">➕ አዲስ ኮርስ ጨምር</a>
         <a href="/admin/add-teacher" style="background:#2980b9; color:white; padding:12px 20px; text-decoration:none; border-radius:8px; font-weight:bold; display:inline-block;">➕ አዲስ መምህር ጨምር</a>
@@ -390,6 +398,17 @@ app.post('/admin/create-teacher', async (req, res) => {
     });
 
     res.redirect('/admin/add-teacher');
+});
+
+app.get('/admin/verify-payment/:id', async (req, res) => {
+    if (!req.session.isAdminLoggedIn) return res.redirect('/');
+    await Student.findOneAndUpdate({ student_id: req.params.id }, { payment_status: 'Verified' });
+    await Notification.create({
+        type: 'PAYMENT_VERIFIED',
+        message: `የ${req.params.id} ክፍያ ተረጋግጧል`,
+        time: new Date().toLocaleString()
+    });
+    res.redirect('/admin');
 });
 
 app.get('/admin/approve-student/:id', async (req, res) => {
