@@ -53,6 +53,25 @@ const courseSchema = new mongoose.Schema({
 });
 const Course = mongoose.model('Course', courseSchema);
 
+// ---- NEW SCHEMAS ADDED ----
+const gradeSchema = new mongoose.Schema({
+    student_id: String, course_name: String, assessment_type: String,
+    score: Number, max_score: Number, teacherName: String, date: String
+});
+const Grade = mongoose.model('Grade', gradeSchema);
+
+const announcementSchema = new mongoose.Schema({
+    section: String, teacherName: String, message: String, date: String
+});
+const Announcement = mongoose.model('Announcement', announcementSchema);
+
+const attendanceSchema = new mongoose.Schema({
+    student_id: String, student_name: String, section: String,
+    date: String, status: String // "Present", "Absent", "Late"
+});
+const Attendance = mongoose.model('Attendance', attendanceSchema);
+// ---- END NEW SCHEMAS ----
+
 // ================== UPLOADS ==================
 if (!fs.existsSync('./uploads')) fs.mkdirSync('./uploads');
 
