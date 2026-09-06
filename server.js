@@ -4,7 +4,8 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const mongoose = require('mongoose');
-
+const PDFDocument = require('pdfkit');
+const bwipjs = require('bwip-js');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -445,6 +446,52 @@ app.get('/student-dashboard', async (req, res) => {
         <br><a href="/logout" style="color:red; font-weight:bold;">🔒 Logout</a>
     </div></body></html>
     `);
+});
+app.get('/admin/id-card/:id', async (req, res) => {
+    if (!req.session.isAdminLoggedIn) return res.redirect('/');
+    const student = await Student.findOne({ student_id: req.params.id });
+    if (!student) return res.redirect('/admin');
+
+    try {
+        const barcodeBuffer = await bwipjs.toBuffer({
+            bcid: 'code128',
+            text: student.student_id,
+            scale: 3,
+            height: 10,
+            includetext: true,
+            textxalign: 'center',
+        });
+
+        const doc = new PDFDocument({ size: [340, 220], margin: 0 });
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename=ID-${student.student_id}.pdf`);
+        doc.pipe(res);
+
+        doc.rect(0, 0, 340, 220).fill('#1f4e79');
+        doc.rect(0, 0, 340, 45).fill('#ffffff');
+        doc.fillColor('#1f4e79').fontSize(16).font('Helvetica-Bold').text('MADDA WALABU UNIVERSITY', 10, 12);
+        doc.fillColor('#1f4e79').fontSize(9).text('STUDENT ID CARD', 10, 30);
+
+        if (student.photo && fs.existsSync(path.join('uploads', student.photo))) {
+            doc.image(path.join('uploads', student.photo), 15, 55, { width: 80, height: 90 });
+        } else {
+            doc.rect(15, 55, 80, 90).fill('#ffffff');
+        }
+
+        doc.fillColor('#ffffff').fontSize(11).font('Helvetica-Bold');
+        doc.text(`Name: ${student.name}`, 105, 55);
+        doc.fontSize(9).font('Helvetica');
+        doc.text(`ID: ${student.student_id}`, 105, 75);
+        doc.text(`Department: ${student.department}`, 105, 92);
+        doc.text(`Class: ${student.class_level}`, 105, 109);
+        doc.text(`Gender: ${student.gender}`, 105, 126);
+
+        doc.image(barcodeBuffer, 15, 155, { width: 310, height: 50 });
+
+        doc.end();
+    } catch (err) {
+        res.status(500).send('Error generating ID card: ' + err.message);
+    }
 });
 
 app.get('/logout', (req, res) => {
