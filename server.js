@@ -727,12 +727,10 @@ app.post('/student/withdraw', async (req, res) => {
         time: new Date().toLocaleString()
     });
 
-    res.send('<div style="font-family:sans-serif; text-align:center; padding:30px;">
+    res.send('<div style="font-family:sans-serif; text-align:center; padding:30px;"><h2 style="color:green;">✅ የመልቀቂያ ጥያቄዎ ተልኳል!</h2><p>አድሚን ምላሽ እስኪሰጥ ይጠብቁ።</p><br><a href="/student-dashboard">ወደ ዳሽቦርድ ተመለስ</a></div>');
+});
+
 app.get('/logout', (req, res) => {
     req.session.destroy();
     res.redirect('/');
-});
-
-app.listen(PORT, () => {
-    console.log(`Server running on http://localhost:${PORT}`);
 });
