@@ -423,6 +423,13 @@ app.get('/teacher-dashboard', async (req, res) => {
         <div style="background:#f9f9f9; padding:8px; margin-bottom:8px; border-left:3px solid green;"><b>${a.title}</b> - ${a.deadline}</div>
     `).join('') || '<p>እስካሁን የተለቀቀ የለም</p>';
 
+    let recentGrades = await Grade.find({ teacherName: teacher.name }).sort({ _id: -1 }).limit(15);
+    let gradeRows = recentGrades.map(g => `
+        <div style="background:#f5f0fa; padding:6px 10px; margin-bottom:5px; border-left:3px solid #8e44ad; font-size:13px;">
+            🎓 ${g.student_id} — ${g.course_name} (${g.assessment_type}): <b>${g.score}/${g.max_score}</b>
+        </div>
+    `).join('') || '<p>እስካሁን ውጤት አልተሰጠም</p>';
+
     res.send(`
     <!DOCTYPE html>
     <html lang="am">
@@ -440,10 +447,58 @@ app.get('/teacher-dashboard', async (req, res) => {
             <button type="submit" style="background:#27ae60; color:white; border:none; padding:10px; width:100%; border-radius:6px; font-weight:bold;">📤 ለተማሪዎች ላክ</button>
         </form><hr>
         <h3>📋 የለቀቋቸው Assessments</h3>${assessmentRows}
+        <hr>
+        <h3>🎯 ውጤት መስጫ (Give Grade)</h3>
+        <form action="/teacher/give-grade" method="POST">
+            <input type="hidden" name="section" value="${assignedSec}">
+            <label>የኮርስ ስም:</label><br>
+            <input type="text" name="course_name" required style="width:100%; padding:8px; margin-bottom:8px;"><br>
+            <label>የተማሪ ID (ለምሳሌ MWU-1234):</label><br>
+            <input type="text" name="student_id" required style="width:100%; padding:8px; margin-bottom:8px; text-transform:uppercase;"><br>
+            <label>የምዘና አይነት (ለምሳሌ: Midterm, Quiz 1, Final):</label><br>
+            <input type="text" name="assessment_type" required style="width:100%; padding:8px; margin-bottom:8px;"><br>
+            <label>ውጤት:</label><br>
+            <input type="number" name="score" required style="width:48%; padding:8px; margin-bottom:8px; display:inline-block;">
+            <label style="display:inline-block; width:4%; text-align:center;">/</label>
+            <input type="number" name="max_score" required placeholder="ከፍተኛ ውጤት" style="width:48%; padding:8px; margin-bottom:12px; display:inline-block;"><br>
+            <button type="submit" style="background:#8e44ad; color:white; border:none; padding:10px; width:100%; border-radius:6px; font-weight:bold;">✅ ውጤት አስመዝግብ</button>
+        </form>
+        <hr>
+        <h3>📊 ያስመዘገብካቸው ውጤቶች</h3>
+        ${gradeRows}
     </div>
     <div style="text-align:center; margin-top:20px;"><a href="/logout" style="color:red; font-weight:bold;">🔒 Logout</a></div>
     </body></html>
     `);
+});
+
+app.post('/teacher/give-grade', async (req, res) => {
+    if (!req.session.teacherId) return res.redirect('/');
+    const { course_name, student_id, assessment_type, score, max_score } = req.body;
+    let teacher = await Teacher.findOne({ teacher_id: req.session.teacherId });
+
+    const student = await Student.findOne({ student_id: student_id.trim().toUpperCase() });
+    if (!student) {
+        return res.send('<h3 style="color:red; text-align:center; margin-top:50px;">❌ ይህ የተማሪ ID አልተገኘም! <a href="/teacher-dashboard">ተመለስ</a></h3>');
+    }
+
+    await Grade.create({
+        student_id: student_id.trim().toUpperCase(),
+        course_name: course_name.trim(),
+        assessment_type: assessment_type.trim(),
+        score: Number(score),
+        max_score: Number(max_score),
+        teacherName: teacher.name,
+        date: new Date().toLocaleString()
+    });
+
+    await Notification.create({
+        type: 'GRADE_GIVEN',
+        message: `መምህር ${teacher.name} ለ ${student_id.trim().toUpperCase()} ውጤት አስመዘገበ (${course_name})`,
+        time: new Date().toLocaleString()
+    });
+
+    res.redirect('/teacher-dashboard');
 });
 
 app.post('/teacher/create-assessment', async (req, res) => {
@@ -471,6 +526,11 @@ app.get('/student-dashboard', async (req, res) => {
     let secAssessments = await Assessment.find({ section: student.class_level });
     let assessmentHtml = secAssessments.map(a => `<div style="background:#eef9f2; padding:10px; margin-bottom:8px; border:1px solid green;"><b>${a.title}</b><p>${a.description}</p><small>አስተማሪ: ${a.teacherName} | ቀን: ${a.deadline}</small></div>`).join('') || '<p>አሳይንመንት የለም</p>';
 
+    let grades = await Grade.find({ student_id: student.student_id }).sort({ _id: -1 });
+    let gradeHtml = grades.map(g => `
+        <tr><td style="padding:6px; border:1px solid #ddd;">${g.course_name}</td><td style="padding:6px; border:1px solid #ddd;">${g.assessment_type}</td><td style="padding:6px; border:1px solid #ddd;">${g.score}/${g.max_score}</td></tr>
+    `).join('') || '<tr><td colspan="3" style="padding:6px; border:1px solid #ddd;">ውጤት እስካሁን የለም</td></tr>';
+
     let courseRows = secCourses.map(c => `
         <tr><td style="padding:6px; border:1px solid #ddd;">${c.course_name}</td><td style="padding:6px; border:1px solid #ddd;">${c.teacher_name}</td><td style="padding:6px; border:1px solid #ddd;">${c.day}</td><td style="padding:6px; border:1px solid #ddd;">${c.time}</td><td style="padding:6px; border:1px solid #ddd;">${c.room}</td></tr>
     `).join('') || '<tr><td colspan="5" style="padding:6px; border:1px solid #ddd;">ኮርስ የለም</td></tr>';
@@ -489,6 +549,11 @@ app.get('/student-dashboard', async (req, res) => {
             <tbody>${courseRows}</tbody>
         </table>
         <h3>📥 የአስተማሪዎች Assessments</h3>${assessmentHtml}
+        <h3>🎯 ውጤትዎ (Grades)</h3>
+        <table style="width:100%; border-collapse:collapse; margin-bottom:15px;">
+            <thead><tr style="background:#8e44ad; color:white;"><th style="padding:6px; border:1px solid #ddd;">ኮርስ</th><th style="padding:6px; border:1px solid #ddd;">አይነት</th><th style="padding:6px; border:1px solid #ddd;">ውጤት</th></tr></thead>
+            <tbody>${gradeHtml}</tbody>
+        </table>
         <br><a href="/logout" style="color:red; font-weight:bold;">🔒 Logout</a>
     </div></body></html>
     `);
