@@ -312,7 +312,10 @@ app.get('/admin', async (req, res) => {
         <table><thead><tr><th>ID</th><th>Pass</th><th>Name</th><th>Dept</th><th>Section</th><th>Action</th></tr></thead><tbody>${teacherRows}</tbody></table></div>
         <div class="card"><h3>🎓 የጸደቁ ተማሪዎች ዝርዝር (Manage & Edit Students)</h3>
         <table><thead><tr><th>ID</th><th>Pass</th><th>Name</th><th>Class</th><th>Action</th></tr></thead><tbody>${studentRows}</tbody></table></div>
-        <div style="text-align:center; margin-bottom:20px;"><a href="/admin/add-course" style="background:#8e44ad; color:white; padding:12px 20px; text-decoration:none; border-radius:8px; font-weight:bold; display:inline-block;">➕ አዲስ ኮርስ ጨምር</a></div><a href="/logout" style="color:red; font-weight:bold; font-size:15px;">🔒 Logout</a>
+        <div style="text-align:center; margin-bottom:20px;">
+        <a href="/admin/add-course" style="background:#8e44ad; color:white; padding:12px 20px; text-decoration:none; border-radius:8px; font-weight:bold; display:inline-block; margin-right:8px;">➕ አዲስ ኮርስ ጨምር</a>
+        <a href="/admin/add-teacher" style="background:#2980b9; color:white; padding:12px 20px; text-decoration:none; border-radius:8px; font-weight:bold; display:inline-block;">➕ አዲስ መምህር ጨምር</a>
+        </div><a href="/logout" style="color:red; font-weight:bold; font-size:15px;">🔒 Logout</a>
     </body></html>
     `);
 });
@@ -346,6 +349,47 @@ app.post('/admin/create-course', async (req, res) => {
     const { course_name, class_level, teacher_name, day, time, room } = req.body;
     await Course.create({ course_name, class_level, teacher_name, day, time, room });
     res.redirect('/admin/add-course');
+});
+
+app.get('/admin/add-teacher', async (req, res) => {
+    if (!req.session.isAdminLoggedIn) return res.redirect('/');
+    res.send(`
+    <div style="font-family:sans-serif; padding:20px; max-width:500px; margin:auto;">
+        <h2>👨‍🏫 አዲስ መምህር መመዝገብ</h2>
+        <form action="/admin/create-teacher" method="POST">
+            <label>የመምህር ID (ለምሳሌ T-103):</label><br>
+            <input type="text" name="teacher_id" required style="width:100%; padding:8px; margin-bottom:10px;"><br>
+            <label>ሙሉ ስም:</label><br>
+            <input type="text" name="name" required style="width:100%; padding:8px; margin-bottom:10px;"><br>
+            <label>ትምህርት ክፍል (Department):</label><br>
+            <input type="text" name="dept" required style="width:100%; padding:8px; margin-bottom:10px;"><br>
+            <label>ፓስዎርድ:</label><br>
+            <input type="text" name="pass" required style="width:100%; padding:8px; margin-bottom:10px;"><br>
+            <label>ስልክ ቁጥር:</label><br>
+            <input type="text" name="phone" required style="width:100%; padding:8px; margin-bottom:10px;"><br>
+            <label>የተመደበበት ሴክሽን (ለምሳሌ: 1st Year - Section A):</label><br>
+            <input type="text" name="assigned_section" required style="width:100%; padding:8px; margin-bottom:15px;"><br>
+            <button type="submit" style="background:#2980b9; color:white; border:none; padding:12px; width:100%; border-radius:6px; font-weight:bold;">➕ መምህር ጨምር</button>
+        </form>
+        <br><a href="/admin">⬅ ወደ Admin ተመለስ</a>
+    </div>`);
+});
+
+app.post('/admin/create-teacher', async (req, res) => {
+    if (!req.session.isAdminLoggedIn) return res.redirect('/');
+    const { teacher_id, name, dept, pass, phone, assigned_section } = req.body;
+
+    const existing = await Teacher.findOne({ teacher_id: teacher_id.trim() });
+    if (existing) {
+        return res.send('<h3 style="color:red; text-align:center; margin-top:50px;">❌ ይህ Teacher ID አስቀድሞ አለ! <a href="/admin/add-teacher">ተመለስ</a></h3>');
+    }
+
+    await Teacher.create({
+        teacher_id: teacher_id.trim(), name: name.trim(), dept: dept.trim(),
+        pass: pass.trim(), phone: phone.trim(), assigned_section: assigned_section.trim()
+    });
+
+    res.redirect('/admin/add-teacher');
 });
 
 app.get('/admin/approve-student/:id', async (req, res) => {
