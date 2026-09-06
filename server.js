@@ -445,7 +445,6 @@ app.post('/admin/submit-withdrawal-response/:id', async (req, res) => {
 });
 
 app.get('/admin/approve-student/:id', async (req, res) => {
-app.get('/admin/approve-student/:id', async (req, res) => {
     if (!req.session.isAdminLoggedIn) return res.redirect('/');
     const pending = await PendingStudent.findById(req.params.id);
     if (pending) {
