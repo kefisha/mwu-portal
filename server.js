@@ -605,7 +605,11 @@ app.get('/student-dashboard', async (req, res) => {
     <style>body { font-family: sans-serif; background: #f4f7f6; padding: 20px; } .container { max-width: 600px; margin: auto; background: white; padding: 20px; border-radius: 10px; }</style></head>
     <body><div class="container">
         <h2>🎓 የተማሪ ዳሽቦርድ</h2>
-        <p>ስም: <b>${student.name}</b> | ሴክሽን: <b>${student.class_level}</b></p><hr>
+        <p>ስም: <b>${student.name}</b> | ሴክሽን: <b>${student.class_level}</b></p>
+        <div style="background:${student.payment_status === 'Verified' ? '#d4edda' : '#fff3cd'}; padding:10px; border-radius:6px; margin-bottom:10px; text-align:center; font-weight:bold; color:${student.payment_status === 'Verified' ? '#155724' : '#856404'};">
+            ${student.payment_status === 'Verified' ? '✅ Registered - ምዝገባዎ ተረጋግጧል' : '⏳ Pending - ክፍያዎ በመጠባበቅ ላይ ነው'}
+        </div>
+        <hr>
         <h3>📚 የክፍልዎ ኮርሶች (Courses)</h3>
         <table style="width:100%; border-collapse:collapse; margin-bottom:15px;">
             <thead><tr style="background:#1f4e79; color:white;"><th style="padding:6px; border:1px solid #ddd;">ኮርስ</th><th style="padding:6px; border:1px solid #ddd;">መምህር</th><th style="padding:6px; border:1px solid #ddd;">ቀን</th><th style="padding:6px; border:1px solid #ddd;">ሰዓት</th><th style="padding:6px; border:1px solid #ddd;">ክፍል</th></tr></thead>
@@ -617,7 +621,12 @@ app.get('/student-dashboard', async (req, res) => {
             <thead><tr style="background:#8e44ad; color:white;"><th style="padding:6px; border:1px solid #ddd;">ኮርስ</th><th style="padding:6px; border:1px solid #ddd;">አይነት</th><th style="padding:6px; border:1px solid #ddd;">ውጤት</th></tr></thead>
             <tbody>${gradeHtml}</tbody>
         </table>
-        <br><a href="/logout" style="color:red; font-weight:bold;">🔒 Logout</a>
+        <hr>
+        <h3>📝 Withdrawal Form (ትምህርት ማቋረጫ)</h3>
+        <form action="/student/withdraw" method="POST">
+            <textarea name="reason" placeholder="ምክንያትዎን እዚህ ይጻፉ..." required style="width:100%; padding:8px; margin-bottom:8px;" rows="3"></textarea>
+            <button type="submit" style="background:#c0392b; color:white; border:none; padding:10px; width:100%; border-radius:6px; font-weight:bold;">📤 ላክ</button>
+        </form>
     </div></body></html>
     `);
 });
