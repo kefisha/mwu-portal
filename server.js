@@ -156,7 +156,7 @@ app.get('/student-register', (req, res) => {
     <style>body { font-family: sans-serif; background: #eef2f5; padding: 15px; font-size: 15px; } .container { max-width: 600px; margin: 0 auto; background: white; padding: 25px; border-radius: 12px; } input, select { width: 100%; padding: 10px; margin-top: 4px; margin-bottom: 12px; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; }</style></head>
     <body><div class="container">
         <h2>📝 ሙሉ የተማሪዎች ምዝገባ ፎርም</h2>
-        <form action="/api/student-self-register" method="POST" enctype="multipart/form-data">
+        <form id="regForm" action="/api/student-self-register" method="POST" enctype="multipart/form-data">
             <label>ሙሉ ስም (Full Name):</label><input type="text" name="name" required>
             <label>የአባት ስም:</label><input type="text" name="father_name" required>
             <label>የእናት ስም:</label><input type="text" name="mother_name" required>
@@ -168,9 +168,23 @@ app.get('/student-register', (req, res) => {
             <select name="year_level"><option value="1st Year">1st Year</option><option value="2nd Year">2nd Year</option><option value="3rd Year">3rd Year</option></select>
             <label>ፎቶ:</label><input type="file" name="student_photo" accept="image/*" required>
             <label>የትራንዛክሽን ቁጥር (Txn ID):</label><input type="text" name="txn_id" required>
-            <button type="submit" style="background:#27ae60; color:white; border:none; padding:12px; width:100%; border-radius:8px; font-weight:bold; cursor:pointer;">🚀 ምዝገባውን ለአድሚን ላክ</button>
+            <button type="submit" id="submitBtn" style="background:#27ae60; color:white; border:none; padding:12px; width:100%; border-radius:8px; font-weight:bold; cursor:pointer;">🚀 ምዝገባውን ለአድሚን ላክ</button>
         </form>
-    </div></body></html>
+    </div>
+    <script>
+        document.getElementById('regForm').addEventListener('submit', function(e) {
+            const btn = document.getElementById('submitBtn');
+            if (btn.disabled) {
+                e.preventDefault();
+                return false;
+            }
+            btn.disabled = true;
+            btn.style.background = '#95a5a6';
+            btn.style.cursor = 'not-allowed';
+            btn.innerHTML = '⏳ እየተላከ ነው... እባክዎ ይጠብቁ';
+        });
+    </script>
+    </body></html>
     `);
 });
 
@@ -178,6 +192,19 @@ const registerUpload = upload.fields([{ name: 'student_photo', maxCount: 1 }]);
 
 app.post('/api/student-self-register', registerUpload, async (req, res) => {
     const { name, father_name, mother_name, gender, age, phone, department, year_level, txn_id } = req.body;
+
+    // Duplicate check: same name + phone + txn_id submitted within the last 60 seconds
+    const oneMinuteAgo = new Date(Date.now() - 60000);
+    const existingPending = await PendingStudent.findOne({
+        name: name.trim(),
+        phone: phone.trim(),
+        bank_slip_val: txn_id
+    }).sort({ _id: -1 });
+
+    if (existingPending && existingPending._id.getTimestamp() > oneMinuteAgo) {
+        return res.send(`<div style="font-family:sans-serif; text-align:center; padding:30px;"><h2 style="color:orange;">⚠️ ይህ ምዝገባ አስቀድሞ ተልኳል!</h2><p>የተመደቡበት ID: <b>${existingPending.student_id}</b> እና PIN: <b>${existingPending.password}</b></p><br><a href="/">ወደ መግቢያ ተመለስ</a></div>`);
+    }
+
     let autoID = generateStudentID();
     let autoPIN = generate4DigitPIN();
     let assignedSection = await assignClassSection(year_level);
