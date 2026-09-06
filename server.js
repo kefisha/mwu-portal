@@ -282,7 +282,7 @@ app.get('/admin', async (req, res) => {
     const teachers = await Teacher.find();
     const students = await Student.find();
     const notifications = await Notification.find().sort({ _id: -1 }).limit(20);
-
+    const withdrawals = await Withdrawal.find({ status: 'Pending' });
     let pendingRows = pendingStudents.map(st => `
         <tr><td>${st.student_id}</td><td><b>${st.password}</b></td><td>${st.name}</td><td>${st.class_level}</td>
         <td><a href="/admin/approve-student/${st._id}" style="background:green; color:white; padding:4px 8px; text-decoration:none; border-radius:4px;">✅ Approve</a></td></tr>
@@ -303,6 +303,10 @@ app.get('/admin', async (req, res) => {
         <li style="padding:5px 0; border-bottom:1px dashed #ccc;">🔔 <b>${n.message}</b> <small style="color:#666;">(${n.time})</small></li>
     `).join('') || '<li>ምንም ማሳወቂያ የለም</li>';
 
+    let withdrawalRows = withdrawals.map(w => `
+        <tr><td>${w.student_id}</td><td>${w.student_name}</td><td>${w.reason}</td><td>${w.date}</td>
+        <td><a href="/admin/respond-withdrawal/${w._id}" style="background:#c0392b; color:white; padding:4px 8px; text-decoration:none; border-radius:4px;">📩 ምላሽ</a></td></tr>
+    `).join('') || '<tr><td colspan="5">ምንም withdrawal ጥያቄ የለም</td></tr>';
     res.send(`
     <!DOCTYPE html>
     <html lang="am">
@@ -320,6 +324,8 @@ app.get('/admin', async (req, res) => {
         <table><thead><tr><th>ID</th><th>Pass</th><th>Name</th><th>Dept</th><th>Section</th><th>Action</th></tr></thead><tbody>${teacherRows}</tbody></table></div>
         <div class="card"><h3>🎓 የጸደቁ ተማሪዎች ዝርዝር (Manage & Edit Students)</h3>
         <table><thead><tr><th>ID</th><th>Pass</th><th>Name</th><th>Class</th><th>Payment</th><th>Action</th></tr></thead><tbody>${studentRows}</tbody></table></div>
+        <div class="card" style="background:#fdf2f2;"><h3 style="color:#c0392b;">📝 Withdrawal ጥያቄዎች (Pending)</h3>
+        <table><thead><tr><th>ID</th><th>Name</th><th>Reason</th><th>Date</th><th>Action</th></tr></thead><tbody>${withdrawalRows}</tbody></table></div>
         <div style="text-align:center; margin-bottom:20px;">
         <a href="/admin/add-course" style="background:#8e44ad; color:white; padding:12px 20px; text-decoration:none; border-radius:8px; font-weight:bold; display:inline-block; margin-right:8px;">➕ አዲስ ኮርስ ጨምር</a>
         <a href="/admin/add-teacher" style="background:#2980b9; color:white; padding:12px 20px; text-decoration:none; border-radius:8px; font-weight:bold; display:inline-block;">➕ አዲስ መምህር ጨምር</a>
@@ -410,7 +416,35 @@ app.get('/admin/verify-payment/:id', async (req, res) => {
     });
     res.redirect('/admin');
 });
+app.get('/admin/respond-withdrawal/:id', async (req, res) => {
+    if (!req.session.isAdminLoggedIn) return res.redirect('/');
+    const w = await Withdrawal.findById(req.params.id);
+    if (!w) return res.redirect('/admin');
+    res.send(`
+    <div style="font-family:sans-serif; padding:20px; max-width:500px; margin:auto;">
+        <h2>📩 ለ${w.student_name} ምላሽ ስጥ</h2>
+        <p><b>ምክንያት:</b> ${w.reason}</p>
+        <form action="/admin/submit-withdrawal-response/${w._id}" method="POST">
+            <textarea name="admin_response" placeholder="ምላሽዎን እዚህ ይጻፉ..." required style="width:100%; padding:8px; margin-bottom:10px;" rows="4"></textarea>
+            <select name="status" style="width:100%; padding:8px; margin-bottom:10px;">
+                <option value="Approved">✅ Approved (ተፈቅዷል)</option>
+                <option value="Rejected">❌ Rejected (ውድቅ ተደርጓል)</option>
+            </select>
+            <button type="submit" style="background:#27ae60; color:white; border:none; padding:12px; width:100%; border-radius:6px; font-weight:bold;">📤 ላክ</button>
+        </form>
+        <br><a href="/admin">⬅ ወደ Admin ተመለስ</a>
+    </div>`);
+});
 
+app.post('/admin/submit-withdrawal-response/:id', async (req, res) => {
+    if (!req.session.isAdminLoggedIn) return res.redirect('/');
+    await Withdrawal.findByIdAndUpdate(req.params.id, {
+        status: req.body.status, admin_response: req.body.admin_response
+    });
+    res.redirect('/admin');
+});
+
+app.get('/admin/approve-student/:id', async (req, res) => {
 app.get('/admin/approve-student/:id', async (req, res) => {
     if (!req.session.isAdminLoggedIn) return res.redirect('/');
     const pending = await PendingStudent.findById(req.params.id);
@@ -627,6 +661,7 @@ app.get('/student-dashboard', async (req, res) => {
             <textarea name="reason" placeholder="ምክንያትዎን እዚህ ይጻፉ..." required style="width:100%; padding:8px; margin-bottom:8px;" rows="3"></textarea>
             <button type="submit" style="background:#c0392b; color:white; border:none; padding:10px; width:100%; border-radius:6px; font-weight:bold;">📤 ላክ</button>
         </form>
+        <br><a href="/logout" style="color:red; font-weight:bold;">🔒 Logout</a>
     </div></body></html>
     `);
 });
@@ -676,7 +711,23 @@ app.get('/admin/id-card/:id', async (req, res) => {
         res.status(500).send('Error generating ID card: ' + err.message);
     }
 });
+app.post('/student/withdraw', async (req, res) => {
+    if (!req.session.studentId) return res.redirect('/');
+    const student = await Student.findOne({ student_id: req.session.studentId });
+    if (!student) return res.redirect('/');
 
+    await Withdrawal.create({
+        student_id: student.student_id, student_name: student.name,
+        reason: req.body.reason, date: new Date().toLocaleString()
+    });
+
+    await Notification.create({
+        type: 'WITHDRAWAL_REQUEST',
+        message: `${student.name} (${student.student_id}) withdrawal ጠይቋል`,
+        time: new Date().toLocaleString()
+    });
+
+    res.send('<div style="font-family:sans-serif; text-align:center; padding:30px;">
 app.get('/logout', (req, res) => {
     req.session.destroy();
     res.redirect('/');
