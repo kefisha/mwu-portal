@@ -241,10 +241,10 @@ app.get('/admin', async (req, res) => {
     `).join('');
 
     let studentRows = students.map(st => `
-        <tr><td>${st.student_id}</td><td><b>${st.password}</b></td><td>${st.name}</td><td>${st.class_level}</td>
-        <td><a href="/admin/edit-student/${st.student_id}" style="background:#2980b9; color:white; padding:3px 6px; text-decoration:none; border-radius:4px;">✏️ Edit</a></td></tr>
+        <tr><td>${st.student_id}</td><td>${st.password}</td><td>${st.name}</td><td>${st.class_level}</td>
+        <td><a href="/admin/edit-student/${st.student_id}" style="background:#2980b9; color:white; padding:3px 6px; text-decoration:none; border-radius:4px;">✏️ Edit</a>
+        <a href="/admin/id-card/${st.student_id}" style="background:#8e44ad; color:white; padding:3px 6px; text-decoration:none; border-radius:4px; margin-left:3px;" target="_blank">🪪 ID</a></td></tr>
     `).join('') || '<tr><td colspan="5">የጸደቁ ተማሪዎች የሉም</td></tr>';
-
     let notifRows = notifications.map(n => `
         <li style="padding:5px 0; border-bottom:1px dashed #ccc;">🔔 <b>${n.message}</b> <small style="color:#666;">(${n.time})</small></li>
     `).join('') || '<li>ምንም ማሳወቂያ የለም</li>';
