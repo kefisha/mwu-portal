@@ -556,7 +556,8 @@ app.get('/admin', async (req, res) => {
 
         <!-- TOP NAV LINKS - always visible -->
         <div style="background:#1f4e79; padding:12px; border-radius:10px; margin-bottom:16px; text-align:center; display:flex; flex-wrap:wrap; gap:8px; justify-content:center;">
-            <a href="/admin/pre-approved" style="background:#27ae60; color:white; padding:10px 16px; text-decoration:none; border-radius:8px; font-weight:bold; font-size:14px;">📋 ቅድመ-ዝርዝር (Pre-Approved)</a>
+            <a href="/admin/pre-approved" style="background:#27ae60; color:white; padding:10px 16px; text-decoration:none; border-radius:8px; font-weight:bold; font-size:14px;">📋 ቅድመ-ዝርዝር</a>
+            <a href="/admin/export-students-by-section" style="background:#16a085; color:white; padding:10px 16px; text-decoration:none; border-radius:8px; font-weight:bold; font-size:14px;">⬇ ተማሪዎች CSV/Excel</a>
             <a href="/admin/add-teacher" style="background:#2980b9; color:white; padding:10px 16px; text-decoration:none; border-radius:8px; font-weight:bold; font-size:14px;">➕ መምህር</a>
             <a href="/admin/add-course" style="background:#8e44ad; color:white; padding:10px 16px; text-decoration:none; border-radius:8px; font-weight:bold; font-size:14px;">➕ ኮርስ</a>
             <a href="/logout" style="background:#c0392b; color:white; padding:10px 16px; text-decoration:none; border-radius:8px; font-weight:bold; font-size:14px;">🔒 Logout</a>
@@ -602,6 +603,10 @@ app.get('/admin', async (req, res) => {
         </table></div>
 
         <div class="card"><h3>🎓 የጸደቁ ተማሪዎች ዝርዝር (Full Info + Password)</h3>
+        <div style="margin-bottom:10px;">
+            <a href="/admin/export-students" style="background:#16a085; color:white; padding:8px 14px; text-decoration:none; border-radius:6px; font-weight:bold; display:inline-block; margin-right:6px;">⬇ ሁሉንም ተማሪዎች CSV አውርድ</a>
+            <a href="/admin/export-students-by-section" style="background:#1abc9c; color:white; padding:8px 14px; text-decoration:none; border-radius:6px; font-weight:bold; display:inline-block;">⬇ በ Class/Section ተከፍሎ አውርድ</a>
+        </div>
         <table>
             <thead><tr>
                 <th>ID</th><th>Password</th><th>Name</th><th>Father</th><th>Mother</th><th>Gender</th><th>Age</th><th>Phone</th><th>Dept</th><th>Class</th><th>Txn ID</th><th>Payment</th><th>Action</th>
@@ -614,12 +619,114 @@ app.get('/admin', async (req, res) => {
 
         <div style="text-align:center; margin-bottom:20px;">
             <a href="/admin/pre-approved" style="background:#27ae60; color:white; padding:12px 20px; text-decoration:none; border-radius:8px; font-weight:bold; display:inline-block; margin-right:8px;">📋 ቅድመ-ዝርዝር</a>
+            <a href="/admin/export-students-by-section" style="background:#16a085; color:white; padding:12px 20px; text-decoration:none; border-radius:8px; font-weight:bold; display:inline-block; margin-right:8px;">⬇ ተማሪዎች Excel/CSV</a>
             <a href="/admin/add-course" style="background:#8e44ad; color:white; padding:12px 20px; text-decoration:none; border-radius:8px; font-weight:bold; display:inline-block; margin-right:8px;">➕ አዲስ ኮርስ</a>
             <a href="/admin/add-teacher" style="background:#2980b9; color:white; padding:12px 20px; text-decoration:none; border-radius:8px; font-weight:bold; display:inline-block;">➕ አዲስ መምህር</a>
         </div>
         <a href="/logout" style="color:red; font-weight:bold; font-size:15px;">🔒 Logout</a>
     </body></html>
     `);
+});
+
+// ================== EXPORT STUDENTS TO CSV / EXCEL ==================
+function escapeCsv(val) {
+    const s = (val == null ? '' : String(val));
+    if (/[",\n\r]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+    return s;
+}
+
+app.get('/admin/export-students', async (req, res) => {
+    if (!req.session.isAdminLoggedIn) return res.redirect('/');
+    const students = await Student.find().sort({ class_level: 1, name: 1 });
+
+    const headers = ['student_id', 'password', 'name', 'father_name', 'mother_name', 'gender', 'age', 'phone', 'department', 'class_level', 'bank_slip_val', 'payment_status', 'status'];
+    const lines = [headers.join(',')];
+
+    for (const st of students) {
+        lines.push([
+            st.student_id, st.password, st.name, st.father_name, st.mother_name,
+            st.gender, st.age, st.phone, st.department, st.class_level,
+            st.bank_slip_val, st.payment_status, st.status
+        ].map(escapeCsv).join(','));
+    }
+
+    const csv = '\uFEFF' + lines.join('\n'); // BOM for Excel Amharic support
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename=all_students.csv');
+    res.send(csv);
+});
+
+app.get('/admin/export-students-by-section', async (req, res) => {
+    if (!req.session.isAdminLoggedIn) return res.redirect('/');
+    const students = await Student.find().sort({ class_level: 1, name: 1 });
+
+    // Group by class_level (section)
+    const groups = {};
+    for (const st of students) {
+        const key = st.class_level || 'Unknown Section';
+        if (!groups[key]) groups[key] = [];
+        groups[key].push(st);
+    }
+
+    // Prefer real Excel if xlsx is available (one sheet per section)
+    if (XLSX) {
+        const wb = XLSX.utils.book_new();
+        const sectionNames = Object.keys(groups).sort();
+
+        if (sectionNames.length === 0) {
+            const ws = XLSX.utils.aoa_to_sheet([['No registered students']]);
+            XLSX.utils.book_append_sheet(wb, ws, 'Empty');
+        } else {
+            for (const sec of sectionNames) {
+                const rows = groups[sec].map(st => ({
+                    student_id: st.student_id,
+                    password: st.password,
+                    name: st.name,
+                    father_name: st.father_name || '',
+                    mother_name: st.mother_name || '',
+                    gender: st.gender || '',
+                    age: st.age || '',
+                    phone: st.phone || '',
+                    department: st.department || '',
+                    class_level: st.class_level || '',
+                    bank_slip_val: st.bank_slip_val || '',
+                    payment_status: st.payment_status || '',
+                    status: st.status || ''
+                }));
+                const ws = XLSX.utils.json_to_sheet(rows);
+                // Sheet name max 31 chars
+                let sheetName = sec.substring(0, 31).replace(/[\\/?*\[\]]/g, '-');
+                if (!sheetName) sheetName = 'Section';
+                XLSX.utils.book_append_sheet(wb, ws, sheetName);
+            }
+        }
+
+        const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', 'attachment; filename=students_by_section.xlsx');
+        return res.send(buf);
+    }
+
+    // Fallback: single CSV with blank line between sections
+    const headers = ['class_level', 'student_id', 'password', 'name', 'father_name', 'mother_name', 'gender', 'age', 'phone', 'department', 'bank_slip_val', 'payment_status', 'status'];
+    const lines = [headers.join(',')];
+
+    const sectionNames = Object.keys(groups).sort();
+    for (const sec of sectionNames) {
+        lines.push(''); // blank separator
+        lines.push(escapeCsv('=== ' + sec + ' (' + groups[sec].length + ' students) ==='));
+        for (const st of groups[sec]) {
+            lines.push([
+                st.class_level, st.student_id, st.password, st.name, st.father_name, st.mother_name,
+                st.gender, st.age, st.phone, st.department, st.bank_slip_val, st.payment_status, st.status
+            ].map(escapeCsv).join(','));
+        }
+    }
+
+    const csv = '\uFEFF' + lines.join('\n');
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename=students_by_section.csv');
+    res.send(csv);
 });
 
 // ================== ADMIN: Handle Password Reset Request ==================
