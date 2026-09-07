@@ -554,6 +554,26 @@ app.get('/admin', async (req, res) => {
     <body>
         <h2>🔐 ADMIN CONTROL & NOTIFICATIONS DASHBOARD</h2>
 
+        <!-- TOP NAV LINKS - always visible -->
+        <div style="background:#1f4e79; padding:12px; border-radius:10px; margin-bottom:16px; text-align:center; display:flex; flex-wrap:wrap; gap:8px; justify-content:center;">
+            <a href="/admin/pre-approved" style="background:#27ae60; color:white; padding:10px 16px; text-decoration:none; border-radius:8px; font-weight:bold; font-size:14px;">📋 ቅድመ-ዝርዝር (Pre-Approved)</a>
+            <a href="/admin/add-teacher" style="background:#2980b9; color:white; padding:10px 16px; text-decoration:none; border-radius:8px; font-weight:bold; font-size:14px;">➕ መምህር</a>
+            <a href="/admin/add-course" style="background:#8e44ad; color:white; padding:10px 16px; text-decoration:none; border-radius:8px; font-weight:bold; font-size:14px;">➕ ኮርስ</a>
+            <a href="/logout" style="background:#c0392b; color:white; padding:10px 16px; text-decoration:none; border-radius:8px; font-weight:bold; font-size:14px;">🔒 Logout</a>
+        </div>
+
+        <!-- PRE-APPROVED - FIRST CARD so admin sees it immediately -->
+        <div class="card" style="background:#eafaf1; border:2px solid #27ae60;">
+            <h3 style="color:#27ae60; margin-top:0;">📋 ቅድመ-ዝርዝር (Pre-Approved List)</h3>
+            <p style="margin:6px 0; font-size:14px;">
+                ጠቅላላ: <b>${preTotal}</b> &nbsp;|&nbsp;
+                Available: <b style="color:green;">${preAvailable}</b> &nbsp;|&nbsp;
+                Used: <b style="color:#888;">${preUsed}</b>
+            </p>
+            <p style="font-size:12px; color:#555;">ተማሪ ምዝገባ ከማድረጉ በፊት ስሙ እዚህ መኖር አለበት። CSV ስቀም ወይም በእጅ ጨምር።</p>
+            <a href="/admin/pre-approved" style="background:#27ae60; color:white; padding:12px 22px; text-decoration:none; border-radius:8px; font-weight:bold; display:inline-block; font-size:15px;">📂 ዝርዝር ክፈት / ስም ጨምር / CSV ስቀም →</a>
+        </div>
+
         <div class="card" style="background:#fdf2f2; border:1px solid #c0392b;">
             <h3 style="color:#c0392b; margin-top:0;">🔔 የአድሚን ማሳወቂያዎች (Notifications)</h3>
             <ul style="margin:0; padding-left:20px; max-height:120px; overflow-y:auto;">${notifRows}</ul>
@@ -592,21 +612,10 @@ app.get('/admin', async (req, res) => {
         <div class="card" style="background:#fdf2f2;"><h3 style="color:#c0392b;">📝 Withdrawal ጥያቄዎች (Pending)</h3>
         <table><thead><tr><th>ID</th><th>Name</th><th>Reason</th><th>Date</th><th>Action</th></tr></thead><tbody>${withdrawalRows}</tbody></table></div>
 
-        <div class="card" style="background:#eafaf1; border:1px solid #27ae60;">
-            <h3 style="color:#27ae60; margin-top:0;">📋 ቅድመ-ዝርዝር (Pre-Approved List for Registration)</h3>
-            <p style="margin:6px 0;">
-                ጠቅላላ: <b>${preTotal}</b> &nbsp;|&nbsp;
-                ያልተጠቀሙ (Available): <b style="color:green;">${preAvailable}</b> &nbsp;|&nbsp;
-                ጥቅም ላይ የዋሉ (Used): <b style="color:#888;">${preUsed}</b>
-            </p>
-            <p style="font-size:12px; color:#555;">ተማሪ ራሱ ምዝገባ ከማድረጉ በፊት ስሙ በዚህ ዝርዝር ውስጥ መኖር አለበት። Excel ስቀም ወይም በእጅ ጨምር።</p>
-            <a href="/admin/pre-approved" style="background:#27ae60; color:white; padding:10px 18px; text-decoration:none; border-radius:8px; font-weight:bold; display:inline-block;">📂 ዝርዝር አስተዳድር / Excel ስቀም</a>
-        </div>
-
         <div style="text-align:center; margin-bottom:20px;">
-            <a href="/admin/add-course" style="background:#8e44ad; color:white; padding:12px 20px; text-decoration:none; border-radius:8px; font-weight:bold; display:inline-block; margin-right:8px;">➕ አዲስ ኮርስ ጨምር</a>
-            <a href="/admin/add-teacher" style="background:#2980b9; color:white; padding:12px 20px; text-decoration:none; border-radius:8px; font-weight:bold; display:inline-block; margin-right:8px;">➕ አዲስ መምህር ጨምር</a>
-            <a href="/admin/pre-approved" style="background:#27ae60; color:white; padding:12px 20px; text-decoration:none; border-radius:8px; font-weight:bold; display:inline-block;">📋 ቅድመ-ዝርዝር</a>
+            <a href="/admin/pre-approved" style="background:#27ae60; color:white; padding:12px 20px; text-decoration:none; border-radius:8px; font-weight:bold; display:inline-block; margin-right:8px;">📋 ቅድመ-ዝርዝር</a>
+            <a href="/admin/add-course" style="background:#8e44ad; color:white; padding:12px 20px; text-decoration:none; border-radius:8px; font-weight:bold; display:inline-block; margin-right:8px;">➕ አዲስ ኮርስ</a>
+            <a href="/admin/add-teacher" style="background:#2980b9; color:white; padding:12px 20px; text-decoration:none; border-radius:8px; font-weight:bold; display:inline-block;">➕ አዲስ መምህር</a>
         </div>
         <a href="/logout" style="color:red; font-weight:bold; font-size:15px;">🔒 Logout</a>
     </body></html>
