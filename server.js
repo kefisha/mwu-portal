@@ -733,3 +733,7 @@ app.get('/logout', (req, res) => {
     req.session.destroy();
     res.redirect('/');
 });
+
+app.listen(PORT, () => {
+    console.log(`Server running on http://localhost:${PORT}`);
+});
