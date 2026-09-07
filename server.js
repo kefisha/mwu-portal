@@ -6,8 +6,15 @@ const fs = require('fs');
 const mongoose = require('mongoose');
 const PDFDocument = require('pdfkit');
 const bwipjs = require('bwip-js');
+let XLSX;
+try { XLSX = require('xlsx'); } catch (e) { XLSX = null; console.log('⚠️  xlsx package not found. Run: npm install xlsx  (Excel upload needs it)'); }
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Normalize name for matching (trim, lowercase, collapse spaces)
+function normalizeName(s) {
+    return (s || '').toString().trim().toLowerCase().replace(/\s+/g, ' ');
+}
 
 // ================== DATABASE CONNECTION ==================
 mongoose.connect(process.env.MONGODB_URI)
@@ -91,6 +98,21 @@ const passwordResetSchema = new mongoose.Schema({
     date: String
 });
 const PasswordReset = mongoose.model('PasswordReset', passwordResetSchema);
+
+// Pre-approved student list (admin uploads Excel / adds manually BEFORE self-registration)
+const preApprovedSchema = new mongoose.Schema({
+    full_name: { type: String, required: true },
+    father_name: String,
+    phone: String,
+    department: String,
+    year_level: String,          // e.g. "1st Year"
+    gender: String,
+    status: { type: String, default: 'Available' }, // Available | Used
+    used_by_student_id: String,
+    source: String,              // "excel" | "manual"
+    uploaded_at: String
+});
+const PreApproved = mongoose.model('PreApproved', preApprovedSchema);
 // ---- END NEW SCHEMAS ----
 
 // ================== UPLOADS ==================
@@ -198,6 +220,9 @@ app.get('/student-register', (req, res) => {
     <style>body { font-family: sans-serif; background: #eef2f5; padding: 15px; font-size: 15px; } .container { max-width: 600px; margin: 0 auto; background: white; padding: 25px; border-radius: 12px; } input, select { width: 100%; padding: 10px; margin-top: 4px; margin-bottom: 12px; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; }</style></head>
     <body><div class="container">
         <h2>📝 ሙሉ የተማሪዎች ምዝገባ ፎርም</h2>
+        <p style="background:#fff3cd; border:1px solid #f0c36d; padding:10px; border-radius:8px; font-size:13px; color:#856404;">
+            ⚠️ <b>ማሳሰቢያ:</b> ስምዎ በአድሚን ቅድመ-ዝርዝር (Pre-Approved List) ውስጥ ካልሆነ ምዝገባ አይፈቀድም። ስምዎን <b>እንደ ዝርዝሩ</b> በትክክል ያስገቡ።
+        </p>
         <form id="regForm" action="/api/student-self-register" method="POST" enctype="multipart/form-data">
             <label>ሙሉ ስም (Full Name):</label><input type="text" name="name" required>
             <label>የአባት ስም:</label><input type="text" name="father_name" required>
@@ -235,6 +260,37 @@ const registerUpload = upload.fields([{ name: 'student_photo', maxCount: 1 }]);
 app.post('/api/student-self-register', registerUpload, async (req, res) => {
     const { name, father_name, mother_name, gender, age, phone, department, year_level, txn_id } = req.body;
 
+    const nameNorm = normalizeName(name);
+    const fatherNorm = normalizeName(father_name);
+
+    // ---- MUST be on admin pre-approved list ----
+    const candidates = await PreApproved.find({ status: 'Available' });
+    let matched = null;
+    for (const row of candidates) {
+        if (normalizeName(row.full_name) === nameNorm) {
+            // If father_name exists on list, require match; otherwise name alone is enough
+            if (row.father_name && normalizeName(row.father_name)) {
+                if (fatherNorm === normalizeName(row.father_name)) {
+                    matched = row;
+                    break;
+                }
+            } else {
+                matched = row;
+                break;
+            }
+        }
+    }
+
+    if (!matched) {
+        return res.send(`
+        <div style="font-family:sans-serif; text-align:center; padding:30px; max-width:520px; margin:auto;">
+            <h2 style="color:#c0392b;">❌ ስምዎ በቅድመ-ዝርዝር (Pre-Approved List) ላይ አልተገኘም!</h2>
+            <p>ምዝገባ ለመጀመር ስምዎ በአድሚን ባስገባው Excel / ዝርዝር ውስጥ መኖር አለበት።</p>
+            <p style="color:#666; font-size:14px;">እባክዎ ስምዎን በትክክል (እንደ ዝርዝሩ) ያስገቡ ወይም አድሚንን ያነጋግሩ።</p>
+            <br><a href="/student-register">⬅ ተመለስ</a> &nbsp;|&nbsp; <a href="/">ወደ መግቢያ</a>
+        </div>`);
+    }
+
     // Duplicate check: same name + phone + txn_id submitted within the last 60 seconds
     const oneMinuteAgo = new Date(Date.now() - 60000);
     const existingPending = await PendingStudent.findOne({
@@ -245,6 +301,12 @@ app.post('/api/student-self-register', registerUpload, async (req, res) => {
 
     if (existingPending && existingPending._id.getTimestamp() > oneMinuteAgo) {
         return res.send(`<div style="font-family:sans-serif; text-align:center; padding:30px;"><h2 style="color:orange;">⚠️ ይህ ምዝገባ አስቀድሞ ተልኳል!</h2><p>የተመደቡበት ID: <b>${existingPending.student_id}</b> እና PIN: <b>${existingPending.password}</b></p><br><a href="/">ወደ መግቢያ ተመለስ</a></div>`);
+    }
+
+    // Also block if already fully registered with same name
+    const alreadyStudent = await Student.findOne({ name: name.trim() });
+    if (alreadyStudent) {
+        return res.send(`<div style="font-family:sans-serif; text-align:center; padding:30px;"><h2 style="color:orange;">⚠️ ይህ ስም አስቀድሞ ተመዝግቧል!</h2><p>ID: <b>${alreadyStudent.student_id}</b></p><br><a href="/">ወደ መግቢያ</a></div>`);
     }
 
     let autoID = generateStudentID();
@@ -258,13 +320,19 @@ app.post('/api/student-self-register', registerUpload, async (req, res) => {
         bank_slip_val: txn_id, photo: photoPath
     });
 
+    // Mark pre-approved row as Used
+    await PreApproved.findByIdAndUpdate(matched._id, {
+        status: 'Used',
+        used_by_student_id: autoID
+    });
+
     await Notification.create({
         type: 'STUDENT_REGISTRATION',
-        message: `አዲስ ተማሪ ተመዝግቧል: ${name.trim()} (${assignedSection})`,
+        message: `አዲስ ተማሪ ተመዝግቧል: ${name.trim()} (${assignedSection}) — ከቅድመ-ዝርዝር`,
         time: new Date().toLocaleString()
     });
 
-    res.send(`<div style="font-family:sans-serif; text-align:center; padding:30px;"><h2 style="color:green;">✅ ምዝገባዎ ተልኳል!</h2><p>የተመደቡበት ID: <b>${autoID}</b> እና PIN: <b>${autoPIN}</b></p><br><a href="/">ወደ መግቢያ ተመለስ</a></div>`);
+    res.send(`<div style="font-family:sans-serif; text-align:center; padding:30px;"><h2 style="color:green;">✅ ምዝገባዎ ተልኳል!</h2><p>የተመደቡበት ID: <b>${autoID}</b> እና PIN: <b>${autoPIN}</b></p><p style="color:#27ae60; font-size:13px;">✓ ስምዎ ከቅድመ-ዝርዝር ጋር ተገኝቷል</p><br><a href="/">ወደ መግቢያ ተመለስ</a></div>`);
 });
 
 app.post('/login', async (req, res) => {
@@ -394,6 +462,9 @@ app.get('/admin', async (req, res) => {
     const notifications = await Notification.find().sort({ _id: -1 }).limit(20);
     const withdrawals = await Withdrawal.find({ status: 'Pending' });
     const passwordResets = await PasswordReset.find({ status: 'Pending' }).sort({ _id: -1 });
+    const preAvailable = await PreApproved.countDocuments({ status: 'Available' });
+    const preUsed = await PreApproved.countDocuments({ status: 'Used' });
+    const preTotal = preAvailable + preUsed;
 
     let pendingRows = pendingStudents.map(st => `
         <tr>
@@ -521,9 +592,21 @@ app.get('/admin', async (req, res) => {
         <div class="card" style="background:#fdf2f2;"><h3 style="color:#c0392b;">📝 Withdrawal ጥያቄዎች (Pending)</h3>
         <table><thead><tr><th>ID</th><th>Name</th><th>Reason</th><th>Date</th><th>Action</th></tr></thead><tbody>${withdrawalRows}</tbody></table></div>
 
+        <div class="card" style="background:#eafaf1; border:1px solid #27ae60;">
+            <h3 style="color:#27ae60; margin-top:0;">📋 ቅድመ-ዝርዝር (Pre-Approved List for Registration)</h3>
+            <p style="margin:6px 0;">
+                ጠቅላላ: <b>${preTotal}</b> &nbsp;|&nbsp;
+                ያልተጠቀሙ (Available): <b style="color:green;">${preAvailable}</b> &nbsp;|&nbsp;
+                ጥቅም ላይ የዋሉ (Used): <b style="color:#888;">${preUsed}</b>
+            </p>
+            <p style="font-size:12px; color:#555;">ተማሪ ራሱ ምዝገባ ከማድረጉ በፊት ስሙ በዚህ ዝርዝር ውስጥ መኖር አለበት። Excel ስቀም ወይም በእጅ ጨምር።</p>
+            <a href="/admin/pre-approved" style="background:#27ae60; color:white; padding:10px 18px; text-decoration:none; border-radius:8px; font-weight:bold; display:inline-block;">📂 ዝርዝር አስተዳድር / Excel ስቀም</a>
+        </div>
+
         <div style="text-align:center; margin-bottom:20px;">
             <a href="/admin/add-course" style="background:#8e44ad; color:white; padding:12px 20px; text-decoration:none; border-radius:8px; font-weight:bold; display:inline-block; margin-right:8px;">➕ አዲስ ኮርስ ጨምር</a>
-            <a href="/admin/add-teacher" style="background:#2980b9; color:white; padding:12px 20px; text-decoration:none; border-radius:8px; font-weight:bold; display:inline-block;">➕ አዲስ መምህር ጨምር</a>
+            <a href="/admin/add-teacher" style="background:#2980b9; color:white; padding:12px 20px; text-decoration:none; border-radius:8px; font-weight:bold; display:inline-block; margin-right:8px;">➕ አዲስ መምህር ጨምር</a>
+            <a href="/admin/pre-approved" style="background:#27ae60; color:white; padding:12px 20px; text-decoration:none; border-radius:8px; font-weight:bold; display:inline-block;">📋 ቅድመ-ዝርዝር</a>
         </div>
         <a href="/logout" style="color:red; font-weight:bold; font-size:15px;">🔒 Logout</a>
     </body></html>
@@ -594,6 +677,223 @@ app.post('/admin/submit-password-reset/:id', async (req, res) => {
         <p style="color:#555;">ይህን ፓስዎርድ ለተጠቃሚው በስልክ/በአካል ይስጡት።</p>
         <br><a href="/admin" style="font-weight:bold;">⬅ ወደ Admin ተመለስ</a>
     </div>`);
+});
+
+// ================== PRE-APPROVED LIST (Excel + Manual) ==================
+app.get('/admin/pre-approved', async (req, res) => {
+    if (!req.session.isAdminLoggedIn) return res.redirect('/');
+    const list = await PreApproved.find().sort({ full_name: 1 });
+    const available = list.filter(x => x.status === 'Available').length;
+    const used = list.filter(x => x.status === 'Used').length;
+
+    const rows = list.map(r => `
+        <tr style="${r.status === 'Used' ? 'background:#f5f5f5; color:#888;' : ''}">
+            <td>${r.full_name}</td>
+            <td>${r.father_name || '-'}</td>
+            <td>${r.phone || '-'}</td>
+            <td>${r.department || '-'}</td>
+            <td>${r.year_level || '-'}</td>
+            <td>${r.gender || '-'}</td>
+            <td>${r.status === 'Available' ? '<span style="color:green;font-weight:bold;">Available</span>' : '<span style="color:#888;">Used</span>'}</td>
+            <td>${r.used_by_student_id || '-'}</td>
+            <td>${r.source || '-'}</td>
+            <td>
+                ${r.status === 'Available' ? `<a href="/admin/pre-approved/delete/${r._id}" style="background:#c0392b;color:white;padding:3px 8px;text-decoration:none;border-radius:4px;" onclick="return confirm('ሰርዝ?')">🗑</a>` : '-'}
+            </td>
+        </tr>
+    `).join('') || '<tr><td colspan="10">ዝርዝር ባዶ ነው — Excel ስቀም ወይም በእጅ ጨምር</td></tr>';
+
+    res.send(`
+    <!DOCTYPE html>
+    <html lang="am">
+    <head><meta charset="UTF-8"><title>Pre-Approved List</title>
+    <style>
+        body { font-family: sans-serif; background:#eef2f5; padding:15px; font-size:13px; }
+        .card { background:white; padding:16px; border-radius:10px; margin-bottom:16px; overflow-x:auto; }
+        table { width:100%; border-collapse:collapse; min-width:800px; }
+        th, td { border:1px solid #ddd; padding:6px; text-align:center; }
+        th { background:#1f4e79; color:white; }
+        input, select { padding:8px; margin:4px 0 10px; border:1px solid #ccc; border-radius:6px; width:100%; box-sizing:border-box; }
+        .btn { display:inline-block; padding:10px 16px; border-radius:6px; color:white; text-decoration:none; font-weight:bold; border:none; cursor:pointer; }
+    </style></head>
+    <body>
+        <h2>📋 ቅድመ-ዝርዝር (Pre-Approved Students)</h2>
+        <p>Available: <b style="color:green;">${available}</b> &nbsp;|&nbsp; Used: <b>${used}</b> &nbsp;|&nbsp; Total: <b>${list.length}</b></p>
+
+        <div class="card">
+            <h3 style="margin-top:0;">📤 Excel / CSV ስቀም</h3>
+            <p style="font-size:12px; color:#555;">አምዶች (headers): <b>full_name</b>, father_name, phone, department, year_level, gender<br>
+            አስፈላጊው አምድ <b>full_name</b> ብቻ ነው። ስሞች ከተማሪው ምዝገባ ጋር መመሳሰል አለባቸው።</p>
+            <form action="/admin/pre-approved/upload" method="POST" enctype="multipart/form-data">
+                <input type="file" name="excel_file" accept=".xlsx,.xls,.csv" required>
+                <button type="submit" class="btn" style="background:#27ae60; margin-top:8px;">⬆ ስቀም (Upload)</button>
+            </form>
+            <p style="margin-top:12px;"><a href="/admin/pre-approved/template" class="btn" style="background:#8e44ad;">⬇ Sample Excel Template አውርድ</a></p>
+            ${!XLSX ? '<p style="color:#c0392b;">⚠️ xlsx package አልተጫነም። <code>npm install xlsx</code> አድርግ። CSV ግን ይሰራል።</p>' : ''}
+        </div>
+
+        <div class="card">
+            <h3 style="margin-top:0;">➕ በእጅ አንድ ስም ጨምር</h3>
+            <form action="/admin/pre-approved/add" method="POST">
+                <label>ሙሉ ስም (Full Name) *:</label>
+                <input type="text" name="full_name" required>
+                <label>የአባት ስም:</label>
+                <input type="text" name="father_name">
+                <label>ስልክ:</label>
+                <input type="text" name="phone">
+                <label>Department:</label>
+                <input type="text" name="department">
+                <label>Year Level:</label>
+                <select name="year_level">
+                    <option value="1st Year">1st Year</option>
+                    <option value="2nd Year">2nd Year</option>
+                    <option value="3rd Year">3rd Year</option>
+                </select>
+                <label>Gender:</label>
+                <select name="gender"><option value="">-</option><option value="Male">Male</option><option value="Female">Female</option></select>
+                <button type="submit" class="btn" style="background:#2980b9;">➕ ጨምር</button>
+            </form>
+        </div>
+
+        <div class="card">
+            <h3 style="margin-top:0;">የዝርዝሩ ይዘት</h3>
+            <p style="font-size:12px;"><a href="/admin/pre-approved/clear-available" onclick="return confirm('ሁሉንም Available ሰዎች ሰርዝ?')" style="color:#c0392b;">🗑 ሁሉንም Available አጽዳ</a></p>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Full Name</th><th>Father</th><th>Phone</th><th>Dept</th><th>Year</th><th>Gender</th>
+                        <th>Status</th><th>Used By ID</th><th>Source</th><th>Del</th>
+                    </tr>
+                </thead>
+                <tbody>${rows}</tbody>
+            </table>
+        </div>
+        <a href="/admin">⬅ ወደ Admin ተመለስ</a>
+    </body></html>
+    `);
+});
+
+app.get('/admin/pre-approved/template', (req, res) => {
+    if (!req.session.isAdminLoggedIn) return res.redirect('/');
+    // Simple CSV template (works without xlsx)
+    const csv = 'full_name,father_name,phone,department,year_level,gender\nAbebe Kebede,Kebede,0911223344,Computer Science,1st Year,Male\nSara Alemu,Alemu,0922334455,Statistics,1st Year,Female\n';
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename=pre_approved_template.csv');
+    res.send(csv);
+});
+
+app.post('/admin/pre-approved/upload', upload.single('excel_file'), async (req, res) => {
+    if (!req.session.isAdminLoggedIn) return res.redirect('/');
+    if (!req.file) return res.send('<h3>ፋይል አልተገኘም <a href="/admin/pre-approved">ተመለስ</a></h3>');
+
+    const filePath = req.file.path;
+    const ext = path.extname(req.file.originalname).toLowerCase();
+    let rows = [];
+
+    try {
+        if (ext === '.csv') {
+            const text = fs.readFileSync(filePath, 'utf8');
+            const lines = text.split(/\r?\n/).filter(l => l.trim());
+            if (lines.length < 2) throw new Error('CSV ባዶ ወይም header ብቻ');
+            const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/\s+/g, '_'));
+            for (let i = 1; i < lines.length; i++) {
+                const cols = lines[i].split(',').map(c => c.trim());
+                const obj = {};
+                headers.forEach((h, idx) => { obj[h] = cols[idx] || ''; });
+                rows.push(obj);
+            }
+        } else if (ext === '.xlsx' || ext === '.xls') {
+            if (!XLSX) {
+                fs.unlinkSync(filePath);
+                return res.send('<h3 style="color:red;">xlsx package አልተጫነም። <code>npm install xlsx</code> አድርግ። ወይም CSV ስቀም። <a href="/admin/pre-approved">ተመለስ</a></h3>');
+            }
+            const wb = XLSX.readFile(filePath);
+            const sheet = wb.Sheets[wb.SheetNames[0]];
+            rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+        } else {
+            fs.unlinkSync(filePath);
+            return res.send('<h3>የማይደገፍ ፋይል አይነት። .xlsx / .csv ብቻ። <a href="/admin/pre-approved">ተመለስ</a></h3>');
+        }
+
+        let added = 0, skipped = 0;
+        const now = new Date().toLocaleString();
+
+        for (const row of rows) {
+            // Flexible header names
+            const full_name = (row.full_name || row.fullname || row.Full_Name || row['Full Name'] || row.name || '').toString().trim();
+            if (!full_name) { skipped++; continue; }
+
+            const father_name = (row.father_name || row.Father_Name || row['Father Name'] || row.father || '').toString().trim();
+            const phone = (row.phone || row.Phone || row.mobile || '').toString().trim();
+            const department = (row.department || row.Department || row.dept || '').toString().trim();
+            const year_level = (row.year_level || row.Year_Level || row['Year Level'] || row.year || '').toString().trim();
+            const gender = (row.gender || row.Gender || '').toString().trim();
+
+            // Skip exact duplicate Available entry
+            const exists = await PreApproved.findOne({
+                full_name: new RegExp('^' + full_name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$', 'i'),
+                status: 'Available'
+            });
+            if (exists) { skipped++; continue; }
+
+            await PreApproved.create({
+                full_name,
+                father_name: father_name || undefined,
+                phone: phone || undefined,
+                department: department || undefined,
+                year_level: year_level || undefined,
+                gender: gender || undefined,
+                status: 'Available',
+                source: 'excel',
+                uploaded_at: now
+            });
+            added++;
+        }
+
+        try { fs.unlinkSync(filePath); } catch (e) {}
+
+        await Notification.create({
+            type: 'PRE_APPROVED_UPLOAD',
+            message: `📋 ቅድመ-ዝርዝር ተጭኗል: ${added} አዲስ, ${skipped} ተዘለሉ`,
+            time: new Date().toLocaleString()
+        });
+
+        res.send(`<div style="font-family:sans-serif;text-align:center;padding:40px;"><h2 style="color:green;">✅ Upload ተሳክቷል</h2><p>${added} ስሞች ተጨመሩ · ${skipped} ተዘለሉ (ባዶ/ድጋሚ)</p><br><a href="/admin/pre-approved">⬅ ወደ ዝርዝር</a></div>`);
+    } catch (err) {
+        try { fs.unlinkSync(filePath); } catch (e) {}
+        res.send(`<div style="font-family:sans-serif;text-align:center;padding:40px;"><h2 style="color:red;">❌ ስህተት</h2><p>${err.message}</p><br><a href="/admin/pre-approved">ተመለስ</a></div>`);
+    }
+});
+
+app.post('/admin/pre-approved/add', async (req, res) => {
+    if (!req.session.isAdminLoggedIn) return res.redirect('/');
+    const { full_name, father_name, phone, department, year_level, gender } = req.body;
+    if (!full_name || !full_name.trim()) return res.redirect('/admin/pre-approved');
+
+    await PreApproved.create({
+        full_name: full_name.trim(),
+        father_name: (father_name || '').trim() || undefined,
+        phone: (phone || '').trim() || undefined,
+        department: (department || '').trim() || undefined,
+        year_level: year_level || undefined,
+        gender: gender || undefined,
+        status: 'Available',
+        source: 'manual',
+        uploaded_at: new Date().toLocaleString()
+    });
+    res.redirect('/admin/pre-approved');
+});
+
+app.get('/admin/pre-approved/delete/:id', async (req, res) => {
+    if (!req.session.isAdminLoggedIn) return res.redirect('/');
+    await PreApproved.findByIdAndDelete(req.params.id);
+    res.redirect('/admin/pre-approved');
+});
+
+app.get('/admin/pre-approved/clear-available', async (req, res) => {
+    if (!req.session.isAdminLoggedIn) return res.redirect('/');
+    await PreApproved.deleteMany({ status: 'Available' });
+    res.redirect('/admin/pre-approved');
 });
 
 app.get('/admin/add-course', async (req, res) => {
