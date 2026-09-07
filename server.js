@@ -557,7 +557,7 @@ app.get('/admin', async (req, res) => {
         <!-- TOP NAV LINKS - always visible -->
         <div style="background:#1f4e79; padding:12px; border-radius:10px; margin-bottom:16px; text-align:center; display:flex; flex-wrap:wrap; gap:8px; justify-content:center;">
             <a href="/admin/pre-approved" style="background:#27ae60; color:white; padding:10px 16px; text-decoration:none; border-radius:8px; font-weight:bold; font-size:14px;">📋 ቅድመ-ዝርዝር</a>
-            <a href="/admin/export-students-by-section" style="background:#16a085; color:white; padding:10px 16px; text-decoration:none; border-radius:8px; font-weight:bold; font-size:14px;">⬇ ተማሪዎች CSV/Excel</a>
+            <a href="/admin/export-students-by-section" style="background:#16a085; color:white; padding:10px 16px; text-decoration:none; border-radius:8px; font-weight:bold; font-size:14px;">⬇ ተማሪዎች Excel</a>
             <a href="/admin/add-teacher" style="background:#2980b9; color:white; padding:10px 16px; text-decoration:none; border-radius:8px; font-weight:bold; font-size:14px;">➕ መምህር</a>
             <a href="/admin/add-course" style="background:#8e44ad; color:white; padding:10px 16px; text-decoration:none; border-radius:8px; font-weight:bold; font-size:14px;">➕ ኮርስ</a>
             <a href="/logout" style="background:#c0392b; color:white; padding:10px 16px; text-decoration:none; border-radius:8px; font-weight:bold; font-size:14px;">🔒 Logout</a>
@@ -628,105 +628,197 @@ app.get('/admin', async (req, res) => {
     `);
 });
 
-// ================== EXPORT STUDENTS TO CSV / EXCEL ==================
-function escapeCsv(val) {
-    const s = (val == null ? '' : String(val));
-    if (/[",\n\r]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
-    return s;
+// ================== EXPORT STUDENTS TO EXCEL (no xlsx package needed) ==================
+function escapeXml(s) {
+    return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
 }
 
-app.get('/admin/export-students', async (req, res) => {
-    if (!req.session.isAdminLoggedIn) return res.redirect('/');
-    const students = await Student.find().sort({ class_level: 1, name: 1 });
+function studentToRow(st) {
+    return [
+        st.student_id || '',
+        st.password || '',
+        st.name || '',
+        st.father_name || '',
+        st.mother_name || '',
+        st.gender || '',
+        st.age || '',
+        st.phone || '',
+        st.department || '',
+        st.class_level || '',
+        st.bank_slip_val || '',
+        st.payment_status || '',
+        st.status || ''
+    ];
+}
 
-    const headers = ['student_id', 'password', 'name', 'father_name', 'mother_name', 'gender', 'age', 'phone', 'department', 'class_level', 'bank_slip_val', 'payment_status', 'status'];
-    const lines = [headers.join(',')];
+const STUDENT_HEADERS = ['ID', 'Password', 'Name', 'Father', 'Mother', 'Gender', 'Age', 'Phone', 'Department', 'Class/Section', 'Txn ID', 'Payment', 'Status'];
 
-    for (const st of students) {
-        lines.push([
-            st.student_id, st.password, st.name, st.father_name, st.mother_name,
-            st.gender, st.age, st.phone, st.department, st.class_level,
-            st.bank_slip_val, st.payment_status, st.status
-        ].map(escapeCsv).join(','));
+// Build real Excel XML (.xls) — opens in Excel / Google Sheets / LibreOffice without any npm package
+function buildExcelXml(sheets) {
+    // sheets: [{ name: 'Section A', rows: [ [..], [..] ] }]  rows include header as first row
+    let xml = '<?xml version="1.0" encoding="UTF-8"?>\n';
+    xml += '<?mso-application progid="Excel.Sheet"?>\n';
+    xml += '<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"\n';
+    xml += ' xmlns:o="urn:schemas-microsoft-com:office:office"\n';
+    xml += ' xmlns:x="urn:schemas-microsoft-com:office:excel"\n';
+    xml += ' xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"\n';
+    xml += ' xmlns:html="http://www.w3.org/TR/REC-html40">\n';
+    xml += '<Styles>\n';
+    xml += '<Style ss:ID="Header"><Font ss:Bold="1"/><Interior ss:Color="#1F4E79" ss:Pattern="Solid"/><Font ss:Color="#FFFFFF"/></Style>\n';
+    xml += '</Styles>\n';
+
+    for (const sheet of sheets) {
+        let name = (sheet.name || 'Sheet').substring(0, 31).replace(/[\\/?*\[\]]/g, '-');
+        if (!name) name = 'Sheet';
+        xml += `<Worksheet ss:Name="${escapeXml(name)}">\n<Table>\n`;
+        for (let i = 0; i < sheet.rows.length; i++) {
+            xml += '<Row>\n';
+            for (const cell of sheet.rows[i]) {
+                const style = i === 0 ? ' ss:StyleID="Header"' : '';
+                xml += `<Cell${style}><Data ss:Type="String">${escapeXml(cell)}</Data></Cell>\n`;
+            }
+            xml += '</Row>\n';
+        }
+        xml += '</Table>\n</Worksheet>\n';
     }
+    xml += '</Workbook>';
+    return xml;
+}
 
-    const csv = '\uFEFF' + lines.join('\n'); // BOM for Excel Amharic support
-    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', 'attachment; filename=all_students.csv');
-    res.send(csv);
-});
-
+// Admin page: choose section and download Excel
 app.get('/admin/export-students-by-section', async (req, res) => {
     if (!req.session.isAdminLoggedIn) return res.redirect('/');
     const students = await Student.find().sort({ class_level: 1, name: 1 });
 
-    // Group by class_level (section)
     const groups = {};
     for (const st of students) {
         const key = st.class_level || 'Unknown Section';
         if (!groups[key]) groups[key] = [];
         groups[key].push(st);
     }
+    const sectionNames = Object.keys(groups).sort();
 
-    // Prefer real Excel if xlsx is available (one sheet per section)
+    const sectionCards = sectionNames.map(sec => `
+        <div style="background:#f8f9fa; border:1px solid #ddd; border-radius:8px; padding:12px; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+            <div>
+                <b style="font-size:15px;">${sec}</b>
+                <span style="color:#666; margin-left:8px;">${groups[sec].length} ተማሪዎች</span>
+            </div>
+            <a href="/admin/export-download?section=${encodeURIComponent(sec)}"
+               style="background:#16a085; color:white; padding:8px 16px; text-decoration:none; border-radius:6px; font-weight:bold;">
+               ⬇ Excel አውርድ
+            </a>
+        </div>
+    `).join('') || '<p style="color:#888;">የጸደቁ ተማሪዎች የሉም።</p>';
+
+    res.send(`
+    <!DOCTYPE html>
+    <html lang="am">
+    <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Export Students Excel</title>
+    <style>
+        body { font-family: sans-serif; background:#eef2f5; padding:16px; }
+        .card { background:white; padding:18px; border-radius:10px; max-width:700px; margin:0 auto 16px; }
+        .btn { display:inline-block; padding:12px 20px; border-radius:8px; color:white; text-decoration:none; font-weight:bold; }
+    </style></head>
+    <body>
+        <div class="card">
+            <h2 style="margin-top:0; color:#16a085;">⬇ ተማሪዎች Excel ማውረጃ</h2>
+            <p style="color:#555; font-size:14px;">በ Class / Section ለይተው Excel (.xls) ያውርዱ። Excel፣ Google Sheets፣ LibreOffice ሁሉም ይከፍታሉ። <b>xlsx package አያስፈልግም።</b></p>
+
+            <div style="text-align:center; margin:16px 0;">
+                <a href="/admin/export-download?section=ALL" class="btn" style="background:#1f4e79;">
+                    ⬇ ሁሉንም Sections አንድ Excel (ሁሉም ሉሆች)
+                </a>
+            </div>
+            <hr>
+            <h3>በ Section ለይተው ያውርዱ</h3>
+            ${sectionCards}
+            <br>
+            <a href="/admin">⬅ ወደ Admin ተመለስ</a>
+        </div>
+    </body></html>
+    `);
+});
+
+// Actual file download
+app.get('/admin/export-download', async (req, res) => {
+    if (!req.session.isAdminLoggedIn) return res.redirect('/');
+
+    const sectionFilter = req.query.section || 'ALL';
+    let students = await Student.find().sort({ class_level: 1, name: 1 });
+
+    if (sectionFilter !== 'ALL') {
+        students = students.filter(st => (st.class_level || 'Unknown Section') === sectionFilter);
+    }
+
+    // Group by section
+    const groups = {};
+    for (const st of students) {
+        const key = st.class_level || 'Unknown Section';
+        if (!groups[key]) groups[key] = [];
+        groups[key].push(st);
+    }
+    const sectionNames = Object.keys(groups).sort();
+
+    // Prefer xlsx package if installed
     if (XLSX) {
         const wb = XLSX.utils.book_new();
-        const sectionNames = Object.keys(groups).sort();
-
         if (sectionNames.length === 0) {
-            const ws = XLSX.utils.aoa_to_sheet([['No registered students']]);
-            XLSX.utils.book_append_sheet(wb, ws, 'Empty');
+            XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['No students']]), 'Empty');
         } else {
             for (const sec of sectionNames) {
                 const rows = groups[sec].map(st => ({
-                    student_id: st.student_id,
-                    password: st.password,
-                    name: st.name,
-                    father_name: st.father_name || '',
-                    mother_name: st.mother_name || '',
-                    gender: st.gender || '',
-                    age: st.age || '',
-                    phone: st.phone || '',
-                    department: st.department || '',
-                    class_level: st.class_level || '',
-                    bank_slip_val: st.bank_slip_val || '',
-                    payment_status: st.payment_status || '',
-                    status: st.status || ''
+                    ID: st.student_id,
+                    Password: st.password,
+                    Name: st.name,
+                    Father: st.father_name || '',
+                    Mother: st.mother_name || '',
+                    Gender: st.gender || '',
+                    Age: st.age || '',
+                    Phone: st.phone || '',
+                    Department: st.department || '',
+                    'Class/Section': st.class_level || '',
+                    'Txn ID': st.bank_slip_val || '',
+                    Payment: st.payment_status || '',
+                    Status: st.status || ''
                 }));
                 const ws = XLSX.utils.json_to_sheet(rows);
-                // Sheet name max 31 chars
                 let sheetName = sec.substring(0, 31).replace(/[\\/?*\[\]]/g, '-');
                 if (!sheetName) sheetName = 'Section';
                 XLSX.utils.book_append_sheet(wb, ws, sheetName);
             }
         }
-
         const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+        const fname = sectionFilter === 'ALL' ? 'all_students_by_section.xlsx' : `students_${sectionFilter.replace(/[^a-zA-Z0-9]/g, '_')}.xlsx`;
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-        res.setHeader('Content-Disposition', 'attachment; filename=students_by_section.xlsx');
+        res.setHeader('Content-Disposition', `attachment; filename="${fname}"`);
         return res.send(buf);
     }
 
-    // Fallback: single CSV with blank line between sections
-    const headers = ['class_level', 'student_id', 'password', 'name', 'father_name', 'mother_name', 'gender', 'age', 'phone', 'department', 'bank_slip_val', 'payment_status', 'status'];
-    const lines = [headers.join(',')];
-
-    const sectionNames = Object.keys(groups).sort();
-    for (const sec of sectionNames) {
-        lines.push(''); // blank separator
-        lines.push(escapeCsv('=== ' + sec + ' (' + groups[sec].length + ' students) ==='));
-        for (const st of groups[sec]) {
-            lines.push([
-                st.class_level, st.student_id, st.password, st.name, st.father_name, st.mother_name,
-                st.gender, st.age, st.phone, st.department, st.bank_slip_val, st.payment_status, st.status
-            ].map(escapeCsv).join(','));
+    // Pure Excel XML (.xls) — works without any package
+    const sheets = [];
+    if (sectionNames.length === 0) {
+        sheets.push({ name: 'Empty', rows: [['No registered students']] });
+    } else {
+        for (const sec of sectionNames) {
+            const rows = [STUDENT_HEADERS];
+            for (const st of groups[sec]) {
+                rows.push(studentToRow(st));
+            }
+            sheets.push({ name: sec, rows });
         }
     }
 
-    const csv = '\uFEFF' + lines.join('\n');
-    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', 'attachment; filename=students_by_section.csv');
-    res.send(csv);
+    const xml = buildExcelXml(sheets);
+    const fname = sectionFilter === 'ALL' ? 'all_students_by_section.xls' : `students_${sectionFilter.replace(/[^a-zA-Z0-9]/g, '_')}.xls`;
+    res.setHeader('Content-Type', 'application/vnd.ms-excel; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${fname}"`);
+    res.send(xml);
 });
 
 // ================== ADMIN: Handle Password Reset Request ==================
