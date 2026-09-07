@@ -284,9 +284,9 @@ app.get('/admin', async (req, res) => {
     const notifications = await Notification.find().sort({ _id: -1 }).limit(20);
     const withdrawals = await Withdrawal.find({ status: 'Pending' });
     let pendingRows = pendingStudents.map(st => `
-        <tr><td>${st.student_id}</td><td><b>${st.password}</b></td><td>${st.name}</td><td>${st.class_level}</td>
+        <tr><td>${st.student_id}</td><td><b>${st.password}</b></td><td>${st.name}</td><td>${st.class_level}</td><td>${st.bank_slip_val}</td>
         <td><a href="/admin/approve-student/${st._id}" style="background:green; color:white; padding:4px 8px; text-decoration:none; border-radius:4px;">✅ Approve</a></td></tr>
-    `).join('') || '<tr><td colspan="5">ምንም አዲስ ጥያቄ የለም</td></tr>';
+    `).join('') || '<tr><td colspan="6">ምንም አዲስ ጥያቄ የለም</td></tr>';
 
     let teacherRows = teachers.map(t => `
         <tr><td>${t.teacher_id}</td><td><b>${t.pass}</b></td><td>${t.name}</td><td>${t.dept}</td><td>${t.assigned_section}</td>
@@ -294,11 +294,11 @@ app.get('/admin', async (req, res) => {
     `).join('');
 
     let studentRows = students.map(st => `
-        <tr><td>${st.student_id}</td><td>${st.password}</td><td>${st.name}</td><td>${st.class_level}</td>
+        <tr><td>${st.student_id}</td><td>${st.password}</td><td>${st.name}</td><td>${st.class_level}</td><td>${st.bank_slip_val}</td>
         <td>${st.payment_status === 'Verified' ? '✅ Verified' : `<a href="/admin/verify-payment/${st.student_id}" style="background:#f39c12; color:white; padding:3px 6px; text-decoration:none; border-radius:4px;">💰 Verify</a>`}</td>
         <td><a href="/admin/edit-student/${st.student_id}" style="background:#2980b9; color:white; padding:3px 6px; text-decoration:none; border-radius:4px;">✏️ Edit</a>
         <a href="/admin/id-card/${st.student_id}" style="background:#8e44ad; color:white; padding:3px 6px; text-decoration:none; border-radius:4px; margin-left:3px;" target="_blank">🪪 ID</a></td></tr>
-    `).join('') || '<tr><td colspan="6">የጸደቁ ተማሪዎች የሉም</td></tr>';
+    `).join('') || '<tr><td colspan="7">የጸደቁ ተማሪዎች የሉም</td></tr>';
     let notifRows = notifications.map(n => `
         <li style="padding:5px 0; border-bottom:1px dashed #ccc;">🔔 <b>${n.message}</b> <small style="color:#666;">(${n.time})</small></li>
     `).join('') || '<li>ምንም ማሳወቂያ የለም</li>';
@@ -319,11 +319,11 @@ app.get('/admin', async (req, res) => {
             <ul style="margin:0; padding-left:20px; max-height:120px; overflow-y:auto;">${notifRows}</ul>
         </div>
         <div class="card"><h3>📥 አዲስ የተመዘገቡ ተማሪዎች (Pending Registration Approval)</h3>
-        <table><thead><tr><th>ID</th><th>Password</th><th>Name</th><th>Class</th><th>Action</th></tr></thead><tbody>${pendingRows}</tbody></table></div>
+        <table><thead><tr><th>ID</th><th>Password</th><th>Name</th><th>Class</th><th>Txn ID</th><th>Action</th></tr></thead><tbody>${pendingRows}</tbody></table></div>
         <div class="card"><h3>👨‍🏫 የመምህራን ዝርዝር (Manage & Edit Teachers)</h3>
         <table><thead><tr><th>ID</th><th>Pass</th><th>Name</th><th>Dept</th><th>Section</th><th>Action</th></tr></thead><tbody>${teacherRows}</tbody></table></div>
         <div class="card"><h3>🎓 የጸደቁ ተማሪዎች ዝርዝር (Manage & Edit Students)</h3>
-        <table><thead><tr><th>ID</th><th>Pass</th><th>Name</th><th>Class</th><th>Payment</th><th>Action</th></tr></thead><tbody>${studentRows}</tbody></table></div>
+        <table><thead><tr><th>ID</th><th>Pass</th><th>Name</th><th>Class</th><th>Txn ID</th><th>Payment</th><th>Action</th></tr></thead><tbody>${studentRows}</tbody></table></div>
         <div class="card" style="background:#fdf2f2;"><h3 style="color:#c0392b;">📝 Withdrawal ጥያቄዎች (Pending)</h3>
         <table><thead><tr><th>ID</th><th>Name</th><th>Reason</th><th>Date</th><th>Action</th></tr></thead><tbody>${withdrawalRows}</tbody></table></div>
         <div style="text-align:center; margin-bottom:20px;">
