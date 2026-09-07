@@ -77,6 +77,20 @@ const attendanceSchema = new mongoose.Schema({
     date: String, status: String // "Present", "Absent", "Late"
 });
 const Attendance = mongoose.model('Attendance', attendanceSchema);
+
+// Password reset request (student/teacher forget password → admin handles)
+const passwordResetSchema = new mongoose.Schema({
+    role: String,           // "student" | "teacher"
+    user_id: String,        // student_id or teacher_id
+    name: String,
+    phone: String,
+    reason: String,
+    status: { type: String, default: 'Pending' }, // Pending | Completed
+    admin_note: String,
+    new_password: String,
+    date: String
+});
+const PasswordReset = mongoose.model('PasswordReset', passwordResetSchema);
 // ---- END NEW SCHEMAS ----
 
 // ================== UPLOADS ==================
@@ -154,6 +168,7 @@ app.get('/', (req, res) => {
         select, input { width: 100%; padding: 12px; margin-bottom: 15px; border: 1px solid #ccc; border-radius: 8px; font-size: 15px; }
         .btn-login { width: 100%; padding: 12px; background: #1f4e79; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; }
         .btn-register { display: block; margin-top: 15px; background: #27ae60; color: white; text-decoration: none; padding: 10px; border-radius: 8px; font-weight: bold; font-size: 15px; }
+        .btn-forgot { display: block; margin-top: 12px; background: #e67e22; color: white; text-decoration: none; padding: 10px; border-radius: 8px; font-weight: bold; font-size: 14px; }
     </style></head>
     <body>
         <div class="container">
@@ -168,6 +183,7 @@ app.get('/', (req, res) => {
                 <input type="text" name="password" placeholder="Password / PIN" required>
                 <button type="submit" class="btn-login">Log In</button>
             </form>
+            <a href="/forgot-password" class="btn-forgot">🔑 ፓስዎርድ ረሳሁ (Forgot Password)</a>
             <a href="/student-register" class="btn-register">📝 አዲስ ተማሪ ምዝገባ (Self Register)</a>
         </div>
     </body></html>
@@ -275,6 +291,100 @@ app.post('/login', async (req, res) => {
     res.send('<h3 style="color:red; text-align:center; margin-top:50px;">❌ የተሳሳተ መረጃ! <a href="/">ተመለስ</a></h3>');
 });
 
+// ================== FORGOT PASSWORD (request → admin only) ==================
+app.get('/forgot-password', (req, res) => {
+    res.send(`
+    <!DOCTYPE html>
+    <html lang="am">
+    <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Forgot Password</title>
+    <style>
+        body { font-family: sans-serif; background: #eef2f5; padding: 20px; }
+        .container { max-width: 480px; margin: 0 auto; background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+        input, select, textarea { width: 100%; padding: 10px; margin: 6px 0 14px; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; }
+        button { width: 100%; padding: 12px; background: #e67e22; color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; }
+    </style></head>
+    <body>
+        <div class="container">
+            <h2 style="color:#e67e22; text-align:center;">🔑 ፓስዎርድ ረሳሁ</h2>
+            <p style="text-align:center; color:#555; font-size:14px;">IDዎን እና ስልክዎን ያስገቡ። ጥያቄዎ ወደ አድሚን ይላካል። አድሚን ብቻ ነው ፓስዎርድ የሚቀይር እና የሚሰጥዎት።</p>
+            <form action="/api/forgot-password" method="POST">
+                <label>Role:</label>
+                <select name="role" required>
+                    <option value="student">🎓 ተማሪ (Student)</option>
+                    <option value="teacher">👨‍🏫 መምህር (Teacher)</option>
+                </select>
+                <label>ID Number:</label>
+                <input type="text" name="user_id" placeholder="MWU-1234 ወይም T-101" required>
+                <label>ስልክ ቁጥር (Phone):</label>
+                <input type="text" name="phone" placeholder="09xxxxxxxx" required>
+                <label>ምክንያት (Reason):</label>
+                <textarea name="reason" rows="3" placeholder="ፓስዎርድ ረሳሁ..." required></textarea>
+                <button type="submit">📤 ጥያቄ ላክ (Send Request)</button>
+            </form>
+            <p style="text-align:center; margin-top:18px;"><a href="/">⬅ ወደ መግቢያ ተመለስ</a></p>
+        </div>
+    </body></html>
+    `);
+});
+
+app.post('/api/forgot-password', async (req, res) => {
+    const { role, user_id, phone, reason } = req.body;
+    const id = (user_id || '').trim();
+    const phoneTrim = (phone || '').trim();
+
+    let name = '';
+    let found = false;
+
+    if (role === 'student') {
+        const st = await Student.findOne({ student_id: id.toUpperCase() });
+        if (st) {
+            found = true;
+            name = st.name;
+            // optional phone match check (soft)
+        }
+    } else if (role === 'teacher') {
+        const t = await Teacher.findOne({ teacher_id: id });
+        if (t) {
+            found = true;
+            name = t.name;
+        }
+    }
+
+    if (!found) {
+        return res.send(`<div style="font-family:sans-serif; text-align:center; padding:40px;"><h2 style="color:red;">❌ ይህ ID አልተገኘም!</h2><p>እባክዎ ትክክለኛ ID ያስገቡ።</p><br><a href="/forgot-password">ተመለስ</a></div>`);
+    }
+
+    // Prevent spam: same user pending request in last 5 minutes
+    const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000);
+    const existing = await PasswordReset.findOne({
+        user_id: role === 'student' ? id.toUpperCase() : id,
+        status: 'Pending'
+    }).sort({ _id: -1 });
+
+    if (existing && existing._id.getTimestamp() > fiveMinAgo) {
+        return res.send(`<div style="font-family:sans-serif; text-align:center; padding:40px;"><h2 style="color:orange;">⚠️ ጥያቄዎ አስቀድሞ ተልኳል!</h2><p>አድሚን ምላሽ እስኪሰጥ ይጠብቁ።</p><br><a href="/">ወደ መግቢያ</a></div>`);
+    }
+
+    await PasswordReset.create({
+        role,
+        user_id: role === 'student' ? id.toUpperCase() : id,
+        name,
+        phone: phoneTrim,
+        reason: (reason || '').trim(),
+        status: 'Pending',
+        date: new Date().toLocaleString()
+    });
+
+    await Notification.create({
+        type: 'PASSWORD_RESET_REQUEST',
+        message: `🔑 ${role === 'student' ? 'ተማሪ' : 'መምህር'} ${name} (${role === 'student' ? id.toUpperCase() : id}) ፓስዎርድ ረሳ ጠይቋል`,
+        time: new Date().toLocaleString()
+    });
+
+    res.send(`<div style="font-family:sans-serif; text-align:center; padding:40px;"><h2 style="color:green;">✅ ጥያቄዎ ተልኳል!</h2><p>አድሚን ምላሽ ሰጥቶ አዲስ ፓስዎርድ ይሰጥዎታል። እባክዎ ይጠብቁ።</p><br><a href="/">ወደ መግቢያ ተመለስ</a></div>`);
+});
+
 app.get('/admin', async (req, res) => {
     if (!req.session.isAdminLoggedIn) return res.redirect('/');
 
@@ -283,22 +393,60 @@ app.get('/admin', async (req, res) => {
     const students = await Student.find();
     const notifications = await Notification.find().sort({ _id: -1 }).limit(20);
     const withdrawals = await Withdrawal.find({ status: 'Pending' });
+    const passwordResets = await PasswordReset.find({ status: 'Pending' }).sort({ _id: -1 });
+
     let pendingRows = pendingStudents.map(st => `
-        <tr><td>${st.student_id}</td><td><b>${st.password}</b></td><td>${st.name}</td><td>${st.class_level}</td><td>${st.bank_slip_val}</td>
-        <td><a href="/admin/approve-student/${st._id}" style="background:green; color:white; padding:4px 8px; text-decoration:none; border-radius:4px;">✅ Approve</a></td></tr>
-    `).join('') || '<tr><td colspan="6">ምንም አዲስ ጥያቄ የለም</td></tr>';
+        <tr>
+            <td>${st.student_id}</td>
+            <td><b>${st.password}</b></td>
+            <td>${st.name}</td>
+            <td>${st.father_name || '-'}</td>
+            <td>${st.mother_name || '-'}</td>
+            <td>${st.gender || '-'}</td>
+            <td>${st.age || '-'}</td>
+            <td>${st.phone || '-'}</td>
+            <td>${st.department || '-'}</td>
+            <td>${st.class_level}</td>
+            <td>${st.bank_slip_val}</td>
+            <td><a href="/admin/approve-student/${st._id}" style="background:green; color:white; padding:4px 8px; text-decoration:none; border-radius:4px;">✅ Approve</a></td>
+        </tr>
+    `).join('') || '<tr><td colspan="12">ምንም አዲስ ጥያቄ የለም</td></tr>';
 
     let teacherRows = teachers.map(t => `
-        <tr><td>${t.teacher_id}</td><td><b>${t.pass}</b></td><td>${t.name}</td><td>${t.dept}</td><td>${t.assigned_section}</td>
-        <td><a href="/admin/edit-teacher/${t.teacher_id}" style="background:#2980b9; color:white; padding:3px 6px; text-decoration:none; border-radius:4px;">✏️ Edit</a></td></tr>
-    `).join('');
+        <tr>
+            <td>${t.teacher_id}</td>
+            <td><b style="color:#c0392b;">${t.pass}</b></td>
+            <td>${t.name}</td>
+            <td>${t.dept || '-'}</td>
+            <td>${t.phone || '-'}</td>
+            <td>${t.assigned_section}</td>
+            <td>
+                <a href="/admin/edit-teacher/${t.teacher_id}" style="background:#2980b9; color:white; padding:3px 6px; text-decoration:none; border-radius:4px;">✏️ Edit / Reset Pass</a>
+            </td>
+        </tr>
+    `).join('') || '<tr><td colspan="7">መምህር የለም</td></tr>';
 
     let studentRows = students.map(st => `
-        <tr><td>${st.student_id}</td><td>${st.password}</td><td>${st.name}</td><td>${st.class_level}</td><td>${st.bank_slip_val}</td>
-        <td>${st.payment_status === 'Verified' ? '✅ Verified' : `<a href="/admin/verify-payment/${st.student_id}" style="background:#f39c12; color:white; padding:3px 6px; text-decoration:none; border-radius:4px;">💰 Verify</a>`}</td>
-        <td><a href="/admin/edit-student/${st.student_id}" style="background:#2980b9; color:white; padding:3px 6px; text-decoration:none; border-radius:4px;">✏️ Edit</a>
-        <a href="/admin/id-card/${st.student_id}" style="background:#8e44ad; color:white; padding:3px 6px; text-decoration:none; border-radius:4px; margin-left:3px;" target="_blank">🪪 ID</a></td></tr>
-    `).join('') || '<tr><td colspan="7">የጸደቁ ተማሪዎች የሉም</td></tr>';
+        <tr>
+            <td>${st.student_id}</td>
+            <td><b style="color:#c0392b;">${st.password}</b></td>
+            <td>${st.name}</td>
+            <td>${st.father_name || '-'}</td>
+            <td>${st.mother_name || '-'}</td>
+            <td>${st.gender || '-'}</td>
+            <td>${st.age || '-'}</td>
+            <td>${st.phone || '-'}</td>
+            <td>${st.department || '-'}</td>
+            <td>${st.class_level}</td>
+            <td>${st.bank_slip_val || '-'}</td>
+            <td>${st.payment_status === 'Verified' ? '✅ Verified' : `<a href="/admin/verify-payment/${st.student_id}" style="background:#f39c12; color:white; padding:3px 6px; text-decoration:none; border-radius:4px;">💰 Verify</a>`}</td>
+            <td>
+                <a href="/admin/edit-student/${st.student_id}" style="background:#2980b9; color:white; padding:3px 6px; text-decoration:none; border-radius:4px;">✏️ Edit / Reset Pass</a>
+                <a href="/admin/id-card/${st.student_id}" style="background:#8e44ad; color:white; padding:3px 6px; text-decoration:none; border-radius:4px; margin-left:3px;" target="_blank">🪪 ID</a>
+            </td>
+        </tr>
+    `).join('') || '<tr><td colspan="13">የጸደቁ ተማሪዎች የሉም</td></tr>';
+
     let notifRows = notifications.map(n => `
         <li style="padding:5px 0; border-bottom:1px dashed #ccc;">🔔 <b>${n.message}</b> <small style="color:#666;">(${n.time})</small></li>
     `).join('') || '<li>ምንም ማሳወቂያ የለም</li>';
@@ -307,31 +455,145 @@ app.get('/admin', async (req, res) => {
         <tr><td>${w.student_id}</td><td>${w.student_name}</td><td>${w.reason}</td><td>${w.date}</td>
         <td><a href="/admin/respond-withdrawal/${w._id}" style="background:#c0392b; color:white; padding:4px 8px; text-decoration:none; border-radius:4px;">📩 ምላሽ</a></td></tr>
     `).join('') || '<tr><td colspan="5">ምንም withdrawal ጥያቄ የለም</td></tr>';
+
+    let resetRows = passwordResets.map(r => `
+        <tr>
+            <td>${r.role === 'student' ? '🎓 ተማሪ' : '👨‍🏫 መምህር'}</td>
+            <td><b>${r.user_id}</b></td>
+            <td>${r.name}</td>
+            <td>${r.phone || '-'}</td>
+            <td>${r.reason}</td>
+            <td>${r.date}</td>
+            <td><a href="/admin/handle-password-reset/${r._id}" style="background:#e67e22; color:white; padding:4px 8px; text-decoration:none; border-radius:4px;">🔑 Reset & Give</a></td>
+        </tr>
+    `).join('') || '<tr><td colspan="7">ምንም ፓስዎርድ ረሳ ጥያቄ የለም</td></tr>';
+
     res.send(`
     <!DOCTYPE html>
     <html lang="am">
     <head><meta charset="UTF-8"><title>Admin Dashboard</title>
-    <style>body { font-family: sans-serif; background: #eef2f5; padding: 15px; font-size: 13px; } .card { background: white; padding: 15px; border-radius: 10px; margin-bottom: 20px; } table { width: 100%; border-collapse: collapse; margin-top:5px; } th, td { border: 1px solid #ddd; padding: 6px; text-align: center; } th { background: #34495e; color: white; }</style></head>
+    <style>
+        body { font-family: sans-serif; background: #eef2f5; padding: 15px; font-size: 12px; }
+        .card { background: white; padding: 15px; border-radius: 10px; margin-bottom: 20px; overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; margin-top:5px; min-width: 900px; }
+        th, td { border: 1px solid #ddd; padding: 5px 6px; text-align: center; vertical-align: middle; }
+        th { background: #34495e; color: white; position: sticky; top: 0; }
+        h2 { margin-top: 0; }
+    </style></head>
     <body>
         <h2>🔐 ADMIN CONTROL & NOTIFICATIONS DASHBOARD</h2>
+
         <div class="card" style="background:#fdf2f2; border:1px solid #c0392b;">
             <h3 style="color:#c0392b; margin-top:0;">🔔 የአድሚን ማሳወቂያዎች (Notifications)</h3>
             <ul style="margin:0; padding-left:20px; max-height:120px; overflow-y:auto;">${notifRows}</ul>
         </div>
-        <div class="card"><h3>📥 አዲስ የተመዘገቡ ተማሪዎች (Pending Registration Approval)</h3>
-        <table><thead><tr><th>ID</th><th>Password</th><th>Name</th><th>Class</th><th>Txn ID</th><th>Action</th></tr></thead><tbody>${pendingRows}</tbody></table></div>
-        <div class="card"><h3>👨‍🏫 የመምህራን ዝርዝር (Manage & Edit Teachers)</h3>
-        <table><thead><tr><th>ID</th><th>Pass</th><th>Name</th><th>Dept</th><th>Section</th><th>Action</th></tr></thead><tbody>${teacherRows}</tbody></table></div>
-        <div class="card"><h3>🎓 የጸደቁ ተማሪዎች ዝርዝር (Manage & Edit Students)</h3>
-        <table><thead><tr><th>ID</th><th>Pass</th><th>Name</th><th>Class</th><th>Txn ID</th><th>Payment</th><th>Action</th></tr></thead><tbody>${studentRows}</tbody></table></div>
+
+        <div class="card" style="background:#fff8e7; border:1px solid #e67e22;">
+            <h3 style="color:#e67e22; margin-top:0;">🔑 ፓስዎርድ ረሳ ጥያቄዎች (Forgot Password Requests)</h3>
+            <table>
+                <thead><tr><th>Role</th><th>ID</th><th>Name</th><th>Phone</th><th>Reason</th><th>Date</th><th>Action</th></tr></thead>
+                <tbody>${resetRows}</tbody>
+            </table>
+        </div>
+
+        <div class="card"><h3>📥 አዲስ የተመዘገቡ ተማሪዎች (Pending Registration) — Full Info</h3>
+        <table>
+            <thead><tr>
+                <th>ID</th><th>Password</th><th>Name</th><th>Father</th><th>Mother</th><th>Gender</th><th>Age</th><th>Phone</th><th>Dept</th><th>Class</th><th>Txn ID</th><th>Action</th>
+            </tr></thead>
+            <tbody>${pendingRows}</tbody>
+        </table></div>
+
+        <div class="card"><h3>👨‍🏫 የመምህራን ዝርዝር (Full Info + Password)</h3>
+        <table>
+            <thead><tr><th>ID</th><th>Password</th><th>Name</th><th>Dept</th><th>Phone</th><th>Section</th><th>Action</th></tr></thead>
+            <tbody>${teacherRows}</tbody>
+        </table></div>
+
+        <div class="card"><h3>🎓 የጸደቁ ተማሪዎች ዝርዝር (Full Info + Password)</h3>
+        <table>
+            <thead><tr>
+                <th>ID</th><th>Password</th><th>Name</th><th>Father</th><th>Mother</th><th>Gender</th><th>Age</th><th>Phone</th><th>Dept</th><th>Class</th><th>Txn ID</th><th>Payment</th><th>Action</th>
+            </tr></thead>
+            <tbody>${studentRows}</tbody>
+        </table></div>
+
         <div class="card" style="background:#fdf2f2;"><h3 style="color:#c0392b;">📝 Withdrawal ጥያቄዎች (Pending)</h3>
         <table><thead><tr><th>ID</th><th>Name</th><th>Reason</th><th>Date</th><th>Action</th></tr></thead><tbody>${withdrawalRows}</tbody></table></div>
+
         <div style="text-align:center; margin-bottom:20px;">
-        <a href="/admin/add-course" style="background:#8e44ad; color:white; padding:12px 20px; text-decoration:none; border-radius:8px; font-weight:bold; display:inline-block; margin-right:8px;">➕ አዲስ ኮርስ ጨምር</a>
-        <a href="/admin/add-teacher" style="background:#2980b9; color:white; padding:12px 20px; text-decoration:none; border-radius:8px; font-weight:bold; display:inline-block;">➕ አዲስ መምህር ጨምር</a>
-        </div><a href="/logout" style="color:red; font-weight:bold; font-size:15px;">🔒 Logout</a>
+            <a href="/admin/add-course" style="background:#8e44ad; color:white; padding:12px 20px; text-decoration:none; border-radius:8px; font-weight:bold; display:inline-block; margin-right:8px;">➕ አዲስ ኮርስ ጨምር</a>
+            <a href="/admin/add-teacher" style="background:#2980b9; color:white; padding:12px 20px; text-decoration:none; border-radius:8px; font-weight:bold; display:inline-block;">➕ አዲስ መምህር ጨምር</a>
+        </div>
+        <a href="/logout" style="color:red; font-weight:bold; font-size:15px;">🔒 Logout</a>
     </body></html>
     `);
+});
+
+// ================== ADMIN: Handle Password Reset Request ==================
+app.get('/admin/handle-password-reset/:id', async (req, res) => {
+    if (!req.session.isAdminLoggedIn) return res.redirect('/');
+    const r = await PasswordReset.findById(req.params.id);
+    if (!r || r.status !== 'Pending') return res.redirect('/admin');
+
+    // Suggest a new random PIN
+    const suggested = generate4DigitPIN();
+
+    res.send(`
+    <div style="font-family:sans-serif; padding:25px; max-width:480px; margin:auto; background:#fff; border-radius:10px;">
+        <h2 style="color:#e67e22;">🔑 ፓስዎርድ Reset ለ ${r.name}</h2>
+        <p><b>Role:</b> ${r.role === 'student' ? 'ተማሪ' : 'መምህር'}</p>
+        <p><b>ID:</b> ${r.user_id}</p>
+        <p><b>Phone:</b> ${r.phone || '-'}</p>
+        <p><b>Reason:</b> ${r.reason}</p>
+        <hr>
+        <form action="/admin/submit-password-reset/${r._id}" method="POST">
+            <label>አዲስ Password / PIN:</label><br>
+            <input type="text" name="new_password" value="${suggested}" required style="width:100%; padding:10px; margin:8px 0 14px; border:1px solid #ccc; border-radius:6px;">
+            <label>Admin Note (optional):</label><br>
+            <textarea name="admin_note" rows="2" placeholder="ለምሳሌ: አዲስ PIN ተሰጥቷል..." style="width:100%; padding:8px; margin-bottom:12px; border:1px solid #ccc; border-radius:6px;"></textarea>
+            <button type="submit" style="background:#27ae60; color:white; border:none; padding:12px; width:100%; border-radius:6px; font-weight:bold;">✅ Reset & Save</button>
+        </form>
+        <br><a href="/admin">⬅ ወደ Admin ተመለስ</a>
+    </div>`);
+});
+
+app.post('/admin/submit-password-reset/:id', async (req, res) => {
+    if (!req.session.isAdminLoggedIn) return res.redirect('/');
+    const r = await PasswordReset.findById(req.params.id);
+    if (!r || r.status !== 'Pending') return res.redirect('/admin');
+
+    const newPass = (req.body.new_password || '').trim();
+    if (!newPass) {
+        return res.send('<h3 style="color:red; text-align:center; margin-top:40px;">Password ባዶ መሆን አይችልም! <a href="/admin">ተመለስ</a></h3>');
+    }
+
+    if (r.role === 'student') {
+        await Student.findOneAndUpdate({ student_id: r.user_id }, { password: newPass });
+    } else if (r.role === 'teacher') {
+        await Teacher.findOneAndUpdate({ teacher_id: r.user_id }, { pass: newPass });
+    }
+
+    await PasswordReset.findByIdAndUpdate(r._id, {
+        status: 'Completed',
+        new_password: newPass,
+        admin_note: (req.body.admin_note || '').trim()
+    });
+
+    await Notification.create({
+        type: 'PASSWORD_RESET_DONE',
+        message: `✅ ${r.role === 'student' ? 'ተማሪ' : 'መምህር'} ${r.name} (${r.user_id}) ፓስዎርድ ተቀይሯል → ${newPass}`,
+        time: new Date().toLocaleString()
+    });
+
+    res.send(`
+    <div style="font-family:sans-serif; text-align:center; padding:40px;">
+        <h2 style="color:green;">✅ ፓስዎርድ ተቀይሯል!</h2>
+        <p><b>${r.name}</b> (${r.user_id})</p>
+        <p style="font-size:22px; background:#f0f0f0; display:inline-block; padding:10px 20px; border-radius:8px;">አዲስ Password: <b>${newPass}</b></p>
+        <p style="color:#555;">ይህን ፓስዎርድ ለተጠቃሚው በስልክ/በአካል ይስጡት።</p>
+        <br><a href="/admin" style="font-weight:bold;">⬅ ወደ Admin ተመለስ</a>
+    </div>`);
 });
 
 app.get('/admin/add-course', async (req, res) => {
@@ -465,21 +727,32 @@ app.get('/admin/edit-teacher/:id', async (req, res) => {
     let t = await Teacher.findOne({ teacher_id: req.params.id });
     if (!t) return res.redirect('/admin');
     res.send(`
-    <div style="font-family:sans-serif; padding:30px; max-width:400px; margin:auto;">
-        <h2>✏️ መምህር ማስተካከል (Edit Teacher)</h2>
+    <div style="font-family:sans-serif; padding:30px; max-width:420px; margin:auto; background:#fff; border-radius:10px;">
+        <h2>✏️ መምህር ማስተካከል / Password Reset</h2>
+        <p style="background:#f5f5f5; padding:10px; border-radius:6px; font-size:13px;">
+            <b>ID:</b> ${t.teacher_id}<br>
+            <b>Dept:</b> ${t.dept || '-'}<br>
+            <b>Phone:</b> ${t.phone || '-'}
+        </p>
         <form action="/admin/update-teacher/${t.teacher_id}" method="POST">
             <label>ስም:</label><input type="text" name="name" value="${t.name}" style="width:100%; padding:8px; margin-bottom:10px;" required>
-            <label>ፓስዎርድ:</label><input type="text" name="pass" value="${t.pass}" style="width:100%; padding:8px; margin-bottom:10px;" required>
+            <label>ፓስዎርድ (Password) — እዚህ ቀይር:</label>
+            <input type="text" name="pass" value="${t.pass}" style="width:100%; padding:8px; margin-bottom:10px; border:2px solid #e67e22;" required>
+            <label>ስልክ:</label><input type="text" name="phone" value="${t.phone || ''}" style="width:100%; padding:8px; margin-bottom:10px;">
             <label>የተመደበበት ሴክሽን:</label><input type="text" name="assigned_section" value="${t.assigned_section}" style="width:100%; padding:8px; margin-bottom:15px;" required>
-            <button type="submit" style="background:green; color:white; padding:10px; width:100%; border:none; border-radius:6px; font-weight:bold;">💾 አስቀምጥ</button>
+            <button type="submit" style="background:green; color:white; padding:12px; width:100%; border:none; border-radius:6px; font-weight:bold;">💾 አስቀምጥ / Reset Password</button>
         </form>
+        <br><a href="/admin">⬅ ወደ Admin ተመለስ</a>
     </div>`);
 });
 
 app.post('/admin/update-teacher/:id', async (req, res) => {
     if (!req.session.isAdminLoggedIn) return res.redirect('/');
     await Teacher.findOneAndUpdate({ teacher_id: req.params.id }, {
-        name: req.body.name, pass: req.body.pass, assigned_section: req.body.assigned_section
+        name: req.body.name,
+        pass: req.body.pass,
+        phone: req.body.phone,
+        assigned_section: req.body.assigned_section
     });
     res.redirect('/admin');
 });
@@ -489,21 +762,33 @@ app.get('/admin/edit-student/:id', async (req, res) => {
     let st = await Student.findOne({ student_id: req.params.id });
     if (!st) return res.redirect('/admin');
     res.send(`
-    <div style="font-family:sans-serif; padding:30px; max-width:400px; margin:auto;">
-        <h2>✏️ ተማሪ ማስተካከል (Edit Student)</h2>
+    <div style="font-family:sans-serif; padding:30px; max-width:420px; margin:auto; background:#fff; border-radius:10px;">
+        <h2>✏️ ተማሪ ማስተካከል / Password Reset</h2>
+        <p style="background:#f5f5f5; padding:10px; border-radius:6px; font-size:13px;">
+            <b>ID:</b> ${st.student_id}<br>
+            <b>Father:</b> ${st.father_name || '-'} | <b>Mother:</b> ${st.mother_name || '-'}<br>
+            <b>Gender:</b> ${st.gender || '-'} | <b>Age:</b> ${st.age || '-'}<br>
+            <b>Dept:</b> ${st.department || '-'} | <b>Phone:</b> ${st.phone || '-'}
+        </p>
         <form action="/admin/update-student/${st.student_id}" method="POST">
             <label>ሙሉ ስም:</label><input type="text" name="name" value="${st.name}" style="width:100%; padding:8px; margin-bottom:10px;" required>
-            <label>ፓስዎርድ (PIN):</label><input type="text" name="password" value="${st.password}" style="width:100%; padding:8px; margin-bottom:10px;" required>
+            <label>ፓስዎርድ (PIN) — እዚህ ቀይር:</label>
+            <input type="text" name="password" value="${st.password}" style="width:100%; padding:8px; margin-bottom:10px; border:2px solid #e67e22;" required>
+            <label>ስልክ:</label><input type="text" name="phone" value="${st.phone || ''}" style="width:100%; padding:8px; margin-bottom:10px;">
             <label>ሴክሽን:</label><input type="text" name="class_level" value="${st.class_level}" style="width:100%; padding:8px; margin-bottom:15px;" required>
-            <button type="submit" style="background:green; color:white; padding:10px; width:100%; border:none; border-radius:6px; font-weight:bold;">💾 አስቀምጥ</button>
+            <button type="submit" style="background:green; color:white; padding:12px; width:100%; border:none; border-radius:6px; font-weight:bold;">💾 አስቀምጥ / Reset Password</button>
         </form>
+        <br><a href="/admin">⬅ ወደ Admin ተመለስ</a>
     </div>`);
 });
 
 app.post('/admin/update-student/:id', async (req, res) => {
     if (!req.session.isAdminLoggedIn) return res.redirect('/');
     await Student.findOneAndUpdate({ student_id: req.params.id }, {
-        name: req.body.name, password: req.body.password, class_level: req.body.class_level
+        name: req.body.name,
+        password: req.body.password,
+        phone: req.body.phone,
+        class_level: req.body.class_level
     });
     res.redirect('/admin');
 });
