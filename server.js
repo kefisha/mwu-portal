@@ -7,6 +7,10 @@ const PDFDocument = require('pdfkit');
 const sqlite3 = require('sqlite3').verbose();
 const bwipjs = require('bwip-js'); // For Barcode Generation
 
+// ስህተት ቢፈጠር ሰርቨሩ ዝም ብሎ እንዳይዘጋ እና በግልፅ እንዲነግረን የሚያደርግ ኮድ
+process.on('uncaughtException', (err) => { console.error('CRITICAL ERROR:', err); });
+process.on('unhandledRejection', (reason, p) => { console.error('UNHANDLED REJECTION:', reason); });
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -122,7 +126,7 @@ app.get('/', (req, res) => {
     };
 
     res.send(`
-    <!DOCTYPE html><html lang="${lang}"><head><meta charset="UTF-8"><title>MWU Portal</title>
+    <!DOCTYPE html><html lang="${lang}"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>MWU Portal</title>
     <style>body{font-family:sans-serif; background:#f4f7f6; padding:20px;} .box{max-width:400px; margin:auto; background:white; padding:30px; border-radius:10px; box-shadow:0 4px 10px rgba(0,0,0,0.1); text-align:center;} input,select,button{width:100%; padding:12px; margin-bottom:15px; border-radius:5px; border:1px solid #ccc; font-size:16px;} button{background:#1f4e79; color:white; font-weight:bold; cursor:pointer;} .reg-btn{display:block; background:#27ae60; color:white; padding:12px; text-decoration:none; border-radius:5px; font-weight:bold;}</style>
     </head><body>
         <div class="box">
@@ -156,7 +160,7 @@ app.get('/student-register', (req, res) => {
     };
 
     res.send(`
-    <!DOCTYPE html><html lang="${lang}"><head><meta charset="UTF-8"><title>Registration</title>
+    <!DOCTYPE html><html lang="${lang}"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Registration</title>
     <style>body{font-family:sans-serif; background:#eef2f5; padding:15px;} .box{max-width:600px; margin:auto; background:white; padding:25px; border-radius:10px;} input,select{width:100%; padding:10px; margin:5px 0 15px; border:1px solid #ccc; border-radius:5px;} .row{display:flex; gap:10px;} .col{flex:1;} button{width:100%; padding:12px; background:#27ae60; color:white; font-weight:bold; border:none; border-radius:5px;}</style>
     </head><body>
         <div class="box">
@@ -262,16 +266,16 @@ app.get('/admin', (req, res) => {
                     let secLinks = sections.map(sec => `<a href="/admin/section/${encodeURIComponent(sec)}" style="display:inline-block; padding:10px; background:#3498db; color:white; text-decoration:none; border-radius:5px; margin:5px;">📂 ${sec}</a>`).join('');
 
                     res.send(`
-                    <!DOCTYPE html><html><head><meta charset="UTF-8"><title>Admin</title>
-                    <style>body{font-family:sans-serif; background:#eef2f5; padding:20px;} .card{background:white; padding:20px; border-radius:10px; margin-bottom:20px;} table{width:100%; border-collapse:collapse;} th,td{border:1px solid #ccc; padding:8px; text-align:center;} th{background:#2c3e50; color:white;}</style></head>
+                    <!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Admin</title>
+                    <style>body{font-family:sans-serif; background:#eef2f5; padding:20px;} .card{background:white; padding:20px; border-radius:10px; margin-bottom:20px; overflow-x:auto;} table{width:100%; border-collapse:collapse; min-width:600px;} th,td{border:1px solid #ccc; padding:8px; text-align:center;} th{background:#2c3e50; color:white;}</style></head>
                     <body>
                         <h2>🔐 Admin Dashboard</h2>
-                        <div class="card"><h3>1. Section Portals (መምህራን እና ተማሪዎች ያሉበት)</h3>${secLinks || 'No sections'}</div>
-                        <div class="card"><h3>2. Pending Registrations</h3><table><tr><th>Photo</th><th>ID</th><th>Name</th><th>Payment</th><th>Action</th></tr>${pRows||'<tr><td colspan="5">None</td></tr>'}</table></div>
-                        <div class="card"><h3>3. All Students (Password Management)</h3><table><tr><th>ID</th><th>Name</th><th>Class</th><th>Password</th><th>Change Password</th></tr>${sRows||'<tr><td colspan="5">None</td></tr>'}</table></div>
-                        <div class="card"><h3>4. Teachers</h3><table><tr><th>ID</th><th>Name</th><th>Section</th><th>Password</th><th>Change Password</th></tr>${tRows}</table></div>
-                        <div class="card"><h3>5. Withdrawal Requests</h3><table><tr><th>Student ID</th><th>Reason</th><th>Details</th><th>Status</th><th>Admin Action</th></tr>${wRows||'<tr><td colspan="5">None</td></tr>'}</table></div>
-                        <a href="/logout" style="color:red; font-weight:bold;">🔒 Logout</a>
+                        <div class="card"><h3>1. Section Portals (የክፍል ፖርታል)</h3>${secLinks || 'No sections'}</div>
+                        <div class="card"><h3>2. Pending Registrations (አዲስ ምዝገባ)</h3><table><tr><th>Photo</th><th>ID</th><th>Name</th><th>Payment</th><th>Action</th></tr>${pRows||'<tr><td colspan="5">None</td></tr>'}</table></div>
+                        <div class="card"><h3>3. All Students & Passwords (የተማሪዎች ይለፍ ቃል)</h3><table><tr><th>ID</th><th>Name</th><th>Class</th><th>Password</th><th>Change Password</th></tr>${sRows||'<tr><td colspan="5">None</td></tr>'}</table></div>
+                        <div class="card"><h3>4. Teachers (የመምህራን ይለፍ ቃል)</h3><table><tr><th>ID</th><th>Name</th><th>Section</th><th>Password</th><th>Change Password</th></tr>${tRows}</table></div>
+                        <div class="card"><h3>5. Withdrawal Requests (የማቋረጥ ጥያቄዎች)</h3><table><tr><th>Student ID</th><th>Reason</th><th>Details</th><th>Status</th><th>Admin Action</th></tr>${wRows||'<tr><td colspan="5">None</td></tr>'}</table></div>
+                        <br><a href="/logout" style="color:red; font-weight:bold; font-size:18px;">🔒 Logout</a>
                     </body></html>`);
                 });
             });
@@ -342,10 +346,11 @@ app.get('/teacher-dashboard', (req, res) => {
             res.send(`
             <div style="font-family:sans-serif; padding:20px; max-width:900px; margin:auto;">
                 <h2>👨‍🏫 Teacher Portal: ${teacher.name} (${teacher.assigned_section})</h2>
-                <table border="1" width="100%" style="border-collapse:collapse; text-align:center;">
+                <div style="overflow-x:auto;">
+                <table border="1" width="100%" style="border-collapse:collapse; text-align:center; min-width:600px;">
                     <tr style="background:#1f4e79; color:white;"><th>ID</th><th>Name</th><th>Quiz(20)</th><th>Mid(30)</th><th>Final(50)</th><th>Total</th><th>Action</th></tr>
                     ${studentRows||'<tr><td colspan="7">No students</td></tr>'}
-                </table><br><a href="/logout">Logout</a>
+                </table></div><br><a href="/logout" style="color:red; font-weight:bold;">🔒 Logout</a>
             </div>`);
         });
     });
@@ -371,8 +376,8 @@ app.get('/student-dashboard', (req, res) => {
             let wHistory = wRecs.map(w => `<p>📝 <b>Reason:</b> ${w.reason} | <b>Status:</b> <span style="color:${w.status==='Approved'?'green':'orange'}">${w.status}</span> | <b>Admin Reply:</b> ${w.admin_reply||'Pending'}</p>`).join('');
 
             res.send(`
-            <!DOCTYPE html><html lang="${lang}"><head><meta charset="UTF-8"><title>Student Dashboard</title>
-            <style>body{font-family:sans-serif; background:#f4f7f6; padding:20px;} .container{max-width:800px; margin:auto;} .card{background:white; padding:20px; border-radius:10px; margin-bottom:20px; box-shadow:0 2px 5px rgba(0,0,0,0.1);} table{width:100%; border-collapse:collapse; margin-top:10px;} th,td{border:1px solid #ccc; padding:8px; text-align:center;} th{background:#1f4e79; color:white;}</style></head>
+            <!DOCTYPE html><html lang="${lang}"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Student Dashboard</title>
+            <style>body{font-family:sans-serif; background:#f4f7f6; padding:20px;} .container{max-width:800px; margin:auto;} .card{background:white; padding:20px; border-radius:10px; margin-bottom:20px; box-shadow:0 2px 5px rgba(0,0,0,0.1); overflow-x:auto;} table{width:100%; border-collapse:collapse; margin-top:10px; min-width:400px;} th,td{border:1px solid #ccc; padding:8px; text-align:center;} th{background:#1f4e79; color:white;}</style></head>
             <body>
                 <div class="container">
                     <div style="text-align:right;"><a href="/student-dashboard?lang=am">አማርኛ</a> | <a href="/student-dashboard?lang=en">English</a></div>
@@ -405,10 +410,10 @@ app.get('/student-dashboard', (req, res) => {
                         <form action="/student/withdraw" method="POST">
                             <select name="reason" style="width:100%; padding:10px; margin-bottom:10px;"><option>Medical Issue</option><option>Financial Issue</option><option>Other</option></select>
                             <textarea name="details" placeholder="Explain your case here..." style="width:100%; padding:10px; margin-bottom:10px;" rows="3" required></textarea>
-                            <button type="submit" style="background:#e67e22; color:white; padding:10px; border:none; border-radius:5px; width:100%; cursor:pointer;">Submit Withdrawal Request to Admin</button>
+                            <button type="submit" style="background:#e67e22; color:white; padding:10px; border:none; border-radius:5px; width:100%; cursor:pointer; font-weight:bold;">Submit Withdrawal Request</button>
                         </form>
                     </div>
-                    <a href="/logout" style="color:red; font-weight:bold;">🔒 Logout</a>
+                    <a href="/logout" style="color:red; font-weight:bold; font-size:18px;">🔒 Logout</a>
                 </div>
             </body></html>`);
         });
@@ -454,4 +459,3 @@ app.get('/download-id-pdf/:id', (req, res) => {
 
 app.get('/logout', (req, res) => { req.session.destroy(); res.redirect('/'); });
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
-EOF
