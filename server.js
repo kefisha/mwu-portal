@@ -1,4 +1,3 @@
-Cat << 'EOF' > server.js
 const express = require('express');
 const session = require('express-session');
 const multer = require('multer');
