@@ -7,7 +7,7 @@ const PDFDocument = require('pdfkit');
 const sqlite3 = require('sqlite3').verbose();
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 
 if (!fs.existsSync('./uploads')) {
     fs.mkdirSync('./uploads');
@@ -210,7 +210,7 @@ app.get('/', (req, res) => {
     `);
 });
 
-// STUDENT REGISTRATION FORM (WITH LANGUAGE OPTION)
+// STUDENT REGISTRATION FORM
 app.get('/student-register', (req, res) => {
     const lang = req.query.lang === 'en' ? 'en' : 'am';
 
@@ -651,6 +651,5 @@ app.get('/logout', (req, res) => {
 });
 
 app.listen(PORT, () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+    console.log(`Server running on port ${PORT}`);
 });
-EOF
