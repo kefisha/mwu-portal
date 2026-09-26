@@ -64,7 +64,12 @@ db.serialize(() => {
     )`);
 
     db.run(`CREATE TABLE IF NOT EXISTS absence_requests (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, student_id TEXT, student_name TEXT, class_level TEXT, reason TEXT, created_at TEXT
+        id INTEGER PRIMARY KEY AUTOINCREMENT, student_id TEXT, student_name TEXT, class_level TEXT, reason TEXT, teacher_feedback TEXT, status TEXT, created_at TEXT
+    )`);
+
+    // Table for Daily Attendance (✅ / ❌)
+    db.run(`CREATE TABLE IF NOT EXISTS daily_attendance (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, student_id TEXT, student_name TEXT, class_level TEXT, date TEXT, status TEXT
     )`);
 
     db.get("SELECT COUNT(*) as count FROM teachers", (err, row) => {
@@ -438,7 +443,7 @@ app.get('/admin', (req, res) => {
                                 <button type="submit">Save</button></form></td>
                             <td><a href="/admin/delete-section/${sec.id}?lang=${lang}" onclick="return confirm('Delete this section?')" style="color:red; font-weight:bold;">🗑️ Delete</a></td>
                             <td>
-                                <a href="/attendance-sheet/${encodeURIComponent(sec.name)}" style="color:#2980b9; font-weight:bold; margin-right:10px;" target="_blank">📋 Attendance Sheet (1-50)</a>
+                                <a href="/attendance-sheet/${encodeURIComponent(sec.name)}" style="color:#2980b9; font-weight:bold; margin-right:10px;" target="_blank">📋 Attendance (1-50)</a>
                                 <a href="/view-excel/${encodeURIComponent(sec.name)}" style="color:#27ae60; font-weight:bold;" target="_blank">📊 Excel Grades</a>
                             </td>
                             </tr>`).join('');
@@ -466,7 +471,7 @@ app.get('/admin', (req, res) => {
 
                             <div class="card">
                                 <h3>${t.directorReport}</h3>
-                                <p style="font-size:13px; color:#555;">የአርብ አርብ የክፍል መገኘት ሪፖርት አጠናቅሮ ለዳይሬክተር ለማድረስ ከታች ያለውን ሊንክ ይጠቀሙ:</p>
+                                <p style="font-size:13px; color:#555;">የአርብ አርብ የክፍል መገኘት ሪፖርት አጠናቅሮ ለዳይሬክተር ለማድረስ ከታች ያለውን ሊንክ ይጠገሙ (ለዳይሬክተር ማሳያ ሚያገለግል):</p>
                                 <a href="/director-report" target="_blank" style="background:#8e44ad; color:white; padding:10px 15px; text-decoration:none; border-radius:5px; font-weight:bold; display:inline-block;">📁 View Director Weekly Friday Report</a>
                             </div>
 
@@ -535,14 +540,14 @@ app.post('/admin/send-notification', (req, res) => {
         ['Admin', 'School Admin', 'ALL', req.body.message, new Date().toLocaleString()], () => res.redirect('/admin'));
 });
 
-// ATTENDANCE SHEET (1 TO 50 STUDENTS EXCEL FORMAT WITH BLANK SPACES)
+// ATTENDANCE SHEET (1 TO 50 STUDENTS WITH ✅ and ❌)
 app.get('/attendance-sheet/:secName', (req, res) => {
     if (!req.session.isAdmin && !req.session.teacherId) return res.redirect('/');
     let sec = decodeURIComponent(req.params.secName);
     db.all(`SELECT * FROM students WHERE class_level = ? ORDER BY name`, [sec], (err, students) => {
         
         let rowsHtml = '';
-        let totalRows = 50; // Must hold up to 50 students/slots
+        let totalRows = 50; // Holds up to 50 slots
         
         for (let i = 0; i < totalRows; i++) {
             let st = students[i];
@@ -553,16 +558,17 @@ app.get('/attendance-sheet/:secName', (req, res) => {
                     <td>${st.student_id}</td>
                     <td style="text-align:left;">${st.name}</td>
                     <td>${st.gender}</td>
-                    <td></td><td></td><td></td><td></td><td></td>
+                    <td><input type="radio" name="att_${num}" value="Present"> ✅</td>
+                    <td><input type="radio" name="att_${num}" value="Absent"> ❌</td>
                 </tr>`;
             } else {
-                // Blank rows up to 50
                 rowsHtml += `<tr>
                     <td>${num}</td>
                     <td>&nbsp;</td>
                     <td>&nbsp;</td>
                     <td>&nbsp;</td>
-                    <td></td><td></td><td></td><td></td><td></td>
+                    <td><input type="radio" name="att_${num}" value="Present"> ✅</td>
+                    <td><input type="radio" name="att_${num}" value="Absent"> ❌</td>
                 </tr>`;
             }
         }
@@ -582,7 +588,7 @@ app.get('/attendance-sheet/:secName', (req, res) => {
             <div class="header-bar">
                 <div>
                     <h2>AMANUEL LIGHT AND LIFE SCHOOL</h2>
-                    <h3>📋 Daily Attendance & Name Calling Sheet - Class: ${sec}</h3>
+                    <h3>📋 Daily Attendance & Name Calling Sheet (✅/❌) - Class: ${sec}</h3>
                 </div>
                 <div><button onclick="window.print()">🖨️ Print Sheet</button> <button onclick="window.close()">❌ Close</button></div>
             </div>
@@ -592,18 +598,15 @@ app.get('/attendance-sheet/:secName', (req, res) => {
                     <th>Student ID</th>
                     <th>Student Full Name</th>
                     <th>Gender</th>
-                    <th>Day 1</th>
-                    <th>Day 2</th>
-                    <th>Day 3</th>
-                    <th>Day 4</th>
-                    <th>Day 5 (Friday/Director)</th>
+                    <th>Present (✅)</th>
+                    <th>Absent (❌)</th>
                 </tr>
                 ${rowsHtml}
             </table>
             <br><br>
             <div style="display:flex; justify-content:space-between; font-weight:bold;">
                 <p>Teacher's Signature: ______________________</p>
-                <p>Director's Signature (Friday): ______________________</p>
+                <p>Director's Signature (Friday Submit): ______________________</p>
             </div>
         </body></html>`);
     });
@@ -617,12 +620,12 @@ app.get('/director-report', (req, res) => {
             
             let reportContent = sections.map(sec => {
                 let classStudents = students.filter(s => s.class_level === sec.name);
-                let studentList = classStudents.map((s, idx) => `<tr><td>${idx+1}</td><td>${s.student_id}</td><td style="text-align:left;">${s.name}</td><td>Present / Absent</td></tr>`).join('');
+                let studentList = classStudents.map((s, idx) => `<tr><td>${idx+1}</td><td>${s.student_id}</td><td style="text-align:left;">${s.name}</td><td>[  ] Present (✅) &nbsp;&nbsp; [  ] Absent (❌)</td></tr>`).join('');
                 
                 return `<div style="margin-bottom:30px; page-break-inside: avoid;">
-                    <h3 style="background:#2c3e50; color:white; padding:8px; margin:0;">Class: ${sec.name} (Total: ${classStudents.length})</h3>
+                    <h3 style="background:#2c3e50; color:white; padding:8px; margin:0;">Class: ${sec.name} (Total Students: ${classStudents.length})</h3>
                     <table border="1" width="100%" style="border-collapse:collapse; text-align:center; font-size:13px;">
-                        <tr style="background:#f2f2f2;"><th>No</th><th>ID</th><th>Full Name</th><th>Friday Status (签到)</th></tr>
+                        <tr style="background:#f2f2f2;"><th>No</th><th>ID</th><th>Full Name</th><th>Friday Attendance Verification (✅ / ❌)</th></tr>
                         ${studentList || '<tr><td colspan="4">No students in this section</td></tr>'}
                     </table>
                 </div>`;
@@ -640,14 +643,14 @@ app.get('/director-report', (req, res) => {
             </head><body>
                 <div class="header">
                     <h2>AMANUEL LIGHT AND LIFE SCHOOL</h2>
-                    <h3>📁 Weekly Friday Attendance Report for Director (የአርብ ሳምንታዊ የሪፖርት መዝገብ)</h3>
+                    <h3>📁 Weekly Friday Attendance Report Submitted for Director (የአርብ ሳምንታዊ መገኘት ሪፖርት)</h3>
                     <button onclick="window.print()">🖨️ Print Friday Report for Director</button>
                 </div>
                 ${reportContent}
                 <br><br>
                 <div style="display:flex; justify-content:space-between; font-weight:bold; margin-top:40px;">
                     <p>Prepared by Registrar / Admin: ___________________</p>
-                    <p>Approved by Director: ___________________</p>
+                    <p>Approved & Signed by Director: ___________________</p>
                 </div>
             </body></html>`);
         });
@@ -860,7 +863,7 @@ app.post('/admin/import-students', csvUpload.single('csv_file'), (req, res) => {
     processRow(0);
 });
 
-// ================= TEACHER DASHBOARD =================
+// TEACHER DASHBOARD
 app.get('/teacher-dashboard', (req, res) => {
     if (!req.session.teacherId) return res.redirect('/');
     const lang = req.query.lang === 'en' ? 'en' : 'am';
@@ -883,7 +886,13 @@ app.get('/teacher-dashboard', (req, res) => {
                     
                     let absRows = absences.map(ab => `<div style="background:#fdf2e9; padding:10px; border-left:4px solid #e67e22; margin-bottom:10px;">
                         <strong>${ab.student_name} (${ab.student_id})</strong> - <em>${ab.created_at}</em><br>
-                        📝 <strong>Reason/ችግር:</strong> ${ab.reason}
+                        📝 <strong>Reason/ችግር:</strong> ${ab.reason}<br>
+                        ${ab.teacher_feedback ? `<span style="color:green; font-weight:bold;">💬 Feedback/ምክር: ${ab.teacher_feedback}</span>` : `
+                        <form action="/teacher/give-feedback" method="POST" style="margin-top:5px; display:flex; gap:5px;">
+                            <input type="hidden" name="req_id" value="${ab.id}">
+                            <input type="text" name="feedback" placeholder="Reply/Feedback to student..." required style="flex:1; padding:4px;">
+                            <button type="submit" style="background:#16a085; color:white; border:none; padding:4px 8px; border-radius:3px;">Send</button>
+                        </form>`}
                     </div>`).join('');
 
                     res.send(`
@@ -891,7 +900,7 @@ app.get('/teacher-dashboard', (req, res) => {
                         <div style="text-align:right;"><a href="/teacher-dashboard?lang=am">አማርኛ</a> | <a href="/teacher-dashboard?lang=en">English</a></div>
                         <h2><img src="/uploads/logo.jpg" onerror="this.style.display='none'" style="height: 40px; border-radius: 50%; vertical-align: middle; margin-right: 10px;">👨‍🏫 Teacher Portal: ${teacher.name} (${teacher.assigned_section})</h2>
                         <div style="margin-bottom:15px;">
-                            <a href="/attendance-sheet/${encodeURIComponent(teacher.assigned_section)}" target="_blank" style="background:#2980b9; color:white; padding:10px; display:inline-block; border-radius:5px; text-decoration:none; margin-right:10px; font-weight:bold;">📋 Daily Attendance Sheet (1-50)</a>
+                            <a href="/attendance-sheet/${encodeURIComponent(teacher.assigned_section)}" target="_blank" style="background:#2980b9; color:white; padding:10px; display:inline-block; border-radius:5px; text-decoration:none; margin-right:10px; font-weight:bold;">📋 Daily Attendance Sheet (✅/❌)</a>
                             <a href="/view-excel/${encodeURIComponent(teacher.assigned_section)}" target="_blank" style="background:#107c41; color:white; padding:10px; display:inline-block; border-radius:5px; text-decoration:none; font-weight:bold;">📊 View Grades in Excel Format</a>
                         </div>
 
@@ -945,6 +954,12 @@ app.post('/teacher/send-notification', (req, res) => {
     });
 });
 
+app.post('/teacher/give-feedback', (req, res) => {
+    if (!req.session.teacherId) return res.redirect('/');
+    let { req_id, feedback } = req.body;
+    db.run(`UPDATE absence_requests SET teacher_feedback = ? WHERE id = ?`, [feedback, req_id], () => res.redirect('/teacher-dashboard'));
+});
+
 app.post('/teacher/add-course', (req, res) => {
     if (!req.session.teacherId) return res.redirect('/');
     db.get(`SELECT * FROM teachers WHERE id = ?`, [req.session.teacherId], (err, teacher) => {
@@ -961,94 +976,104 @@ app.post('/teacher/save-grade', (req, res) => {
     [student_id, quiz, mid, final, total, total>=50?'Pass':'Fail', quiz, mid, final, total, total>=50?'Pass':'Fail'], () => res.redirect('/teacher-dashboard'));
 });
 
-// ================= STUDENT DASHBOARD =================
+// STUDENT DASHBOARD
 app.get('/student-dashboard', (req, res) => {
     if (!req.session.studentId) return res.redirect('/');
-    const lang = req.query.lang || 'am';
+    const lang = req.query.lang === 'en' ? 'en' : 'am';
     
     const t = lang === 'en' ? {
         dash: "🎓 Student Dashboard", msg: "Admin Message",
         cls: "Class", mon: "Monitor", idbtn: "📥 Download Digital ID",
         crs: "Registered Courses", asm: "Assessment & Grades",
-        abs: "⚠️ Request Absence (Notify Teacher)", absDesc: "Send this form at least 1 hour before class if you are sick or have a problem.", absBtn: "Send Request",
-        updatePhoto: "📷 Update Profile Photo"
+        abs: "⚠️ Request Absence (Notify Teacher)", absDesc: "Send this form if you are sick or have a problem.", absBtn: "Send Request",
+        updatePhoto: "📷 Update Profile Photo", myAbs: "📋 My Absence Requests & Teacher Feedback"
     } : {
         dash: "🎓 የተማሪ መቆጣጠሪያ", msg: "የአድሚን መልዕክት",
         cls: "ክፍል", mon: "ተቆጣጣሪ", idbtn: "📥 ዲጂታል መታወቂያ ያውርዱ",
         crs: "የተመዘገቡ ትምህርቶች", asm: "ውጤቶች",
-        abs: "⚠️ የቀሪነት/ፈቃድ ጥያቄ (ለመምህር ማሳወቂያ)", absDesc: "ካመመዎት ወይም ችግር ካጋጠመዎት ክፍል ከመጀመሩ ቢያንስ ከ1 ሰዓት በፊት ይህንን ቅጽ ይሙሉ::", absBtn: "ጥያቄውን ላክ",
-        updatePhoto: "📷 የፕሮፋይል ፎቶ ቀይር"
+        abs: "⚠️ የቀሪነት/ፈቃድ ጥያቄ (ለመምህር ማሳወቂያ)", absDesc: "ካመመዎት ወይም ችግር ካጋጠመዎት ይህንን ቅጽ ይሙሉ::", absBtn: "ጥያቄውን ላክ",
+        updatePhoto: "📷 የፕሮፋይል ፎቶ ቀይር", myAbs: "📋 የላኳቸው የፈቃድ ጥያቄዎች እና የመምህር ምላሽ"
     };
 
     db.get(`SELECT s.*, a.quiz, a.mid, a.final, a.total, a.remark FROM students s LEFT JOIN assessments a ON s.student_id = a.student_id WHERE s.student_id = ?`, [req.session.studentId], (err, student) => {
         db.all(`SELECT * FROM courses WHERE class_level = ? ORDER BY id`, [student.class_level], (err, courses) => {
             db.get(`SELECT * FROM sections WHERE name = ?`, [student.class_level], (err, section) => {
                 db.all(`SELECT * FROM notifications WHERE target_audience = 'ALL' OR target_audience = ? ORDER BY id DESC`, [student.class_level], (err, notifications) => {
+                    db.all(`SELECT * FROM absence_requests WHERE student_id = ? ORDER BY id DESC`, [student.student_id], (err, myAbsences) => {
 
-                    let monitor = section || { monitor_name: "N/A", monitor_phone: "-" };
-                    let courseRows = courses.map(c => `<tr><td>${c.code}</td><td>${c.title}</td><td>${c.credit_hours}</td><td>${c.teacher_name}</td></tr>`).join('');
-                    
-                    let notiRows = notifications.map(n => `<div style="background:${n.sender_role==='Admin'?'#f8d7da':'#d1ecf1'}; color:${n.sender_role==='Admin'?'#721c24':'#0c5460'}; padding:10px; margin-bottom:10px; border-radius:5px; border-left:5px solid ${n.sender_role==='Admin'?'#f5c6cb':'#bee5eb'};">
-                        <strong style="font-size:12px;">🔔 From: ${n.sender_name} (${n.created_at})</strong><br>
-                        ${n.message}
-                    </div>`).join('');
+                        let monitor = section || { monitor_name: "N/A", monitor_phone: "-" };
+                        let courseRows = courses.map(c => `<tr><td>${c.code}</td><td>${c.title}</td><td>${c.credit_hours}</td><td>${c.teacher_name}</td></tr>`).join('');
+                        
+                        let notiRows = notifications.map(n => `<div style="background:${n.sender_role==='Admin'?'#f8d7da':'#d1ecf1'}; color:${n.sender_role==='Admin'?'#721c24':'#0c5460'}; padding:10px; margin-bottom:10px; border-radius:5px; border-left:5px solid ${n.sender_role==='Admin'?'#f5c6cb':'#bee5eb'};">
+                            <strong style="font-size:12px;">🔔 From: ${n.sender_name} (${n.created_at})</strong><br>
+                            ${n.message}
+                        </div>`).join('');
 
-                    res.send(`
-                    <!DOCTYPE html><html lang="${lang}"><head><meta charset="UTF-8"><title>Student Dashboard - Amanuel School</title>
-                    <style>body{font-family:sans-serif; background:#f4f7f6; padding:20px;} .container{max-width:800px; margin:auto;} .card{background:white; padding:20px; border-radius:10px; margin-bottom:20px; box-shadow:0 2px 5px rgba(0,0,0,0.1); overflow-x:auto;} table{width:100%; border-collapse:collapse; margin-top:10px; min-width:400px;} th,td{border:1px solid #ccc; padding:8px; text-align:center;} th{background:#1f4e79; color:white;}</style></head>
-                    <body>
-                        <div class="container">
-                            <div style="text-align:right;"><a href="/student-dashboard?lang=am">አማርኛ</a> | <a href="/student-dashboard?lang=en">English</a></div>
-                            <h2><img src="/uploads/logo.jpg" onerror="this.style.display='none'" style="height: 40px; border-radius: 50%; vertical-align: middle; margin-right: 10px;">${t.dash}</h2>
-                            
-                            ${notifications.length > 0 ? `<div class="card" style="background:#fff3cd; border:1px solid #ffeeba;"><h3>📢 Notifications (ማስታወቂያዎች)</h3>${notiRows}</div>` : ''}
+                        let myAbsRows = myAbsences.map(ab => `<div style="background:#f9f9f9; padding:8px; border:1px solid #ddd; margin-bottom:5px; border-radius:4px;">
+                            <small>📅 ${ab.created_at}</small><br>
+                            <strong>Reason:</strong> ${ab.reason}<br>
+                            ${ab.teacher_feedback ? `<span style="color:green; font-weight:bold;">💬 Teacher Feedback/ምክር: ${ab.teacher_feedback}</span>` : `<span style="color:orange;">⏳ Pending teacher response...</span>`}
+                        </div>`).join('');
 
-                            <div class="card" style="background:#d4edda; color:#155724;">📢 <b>${t.msg}:</b> ${student.admin_message}</div>
+                        res.send(`
+                        <!DOCTYPE html><html lang="${lang}"><head><meta charset="UTF-8"><title>Student Dashboard - Amanuel School</title>
+                        <style>body{font-family:sans-serif; background:#f4f7f6; padding:20px;} .container{max-width:800px; margin:auto;} .card{background:white; padding:20px; border-radius:10px; margin-bottom:20px; box-shadow:0 2px 5px rgba(0,0,0,0.1); overflow-x:auto;} table{width:100%; border-collapse:collapse; margin-top:10px; min-width:400px;} th,td{border:1px solid #ccc; padding:8px; text-align:center;} th{background:#1f4e79; color:white;}</style></head>
+                        <body>
+                            <div class="container">
+                                <div style="text-align:right;"><a href="/student-dashboard?lang=am">አማርኛ</a> | <a href="/student-dashboard?lang=en">English</a></div>
+                                <h2><img src="/uploads/logo.jpg" onerror="this.style.display='none'" style="height: 40px; border-radius: 50%; vertical-align: middle; margin-right: 10px;">${t.dash}</h2>
+                                
+                                ${notifications.length > 0 ? `<div class="card" style="background:#fff3cd; border:1px solid #ffeeba;"><h3>📢 Notifications (ማስታወቂያዎች)</h3>${notiRows}</div>` : ''}
 
-                            <div class="card" style="display:flex; gap:20px; align-items:center; flex-wrap:wrap;">
-                                <div>
-                                    <img src="/uploads/${student.photo}" style="width:100px; height:120px; object-fit:cover; border-radius:5px; display:block; margin-bottom:8px;">
-                                    <form action="/student/update-photo" method="POST" enctype="multipart/form-data">
-                                        <input type="file" name="new_photo" accept="image/*" required style="font-size:11px; width:130px; margin-bottom:4px;"><br>
-                                        <button type="submit" style="background:#2980b9; color:white; border:none; padding:4px 8px; border-radius:3px; cursor:pointer; font-size:11px;">${t.updatePhoto}</button>
+                                <div class="card" style="background:#d4edda; color:#155724;">📢 <b>${t.msg}:</b> ${student.admin_message}</div>
+
+                                <div class="card" style="display:flex; gap:20px; align-items:center; flex-wrap:wrap;">
+                                    <div>
+                                        <img src="/uploads/${student.photo}" style="width:100px; height:120px; object-fit:cover; border-radius:5px; display:block; margin-bottom:8px;">
+                                        <form action="/student/update-photo" method="POST" enctype="multipart/form-data">
+                                            <input type="file" name="new_photo" accept="image/*" required style="font-size:11px; width:130px; margin-bottom:4px;"><br>
+                                            <button type="submit" style="background:#2980b9; color:white; border:none; padding:4px 8px; border-radius:3px; cursor:pointer; font-size:11px;">${t.updatePhoto}</button>
+                                        </form>
+                                    </div>
+                                    <div style="flex:1;">
+                                        <h3>${student.name} (${student.student_id})</h3>
+                                        <p><b>${t.cls}:</b> ${student.class_level} | <b>${t.mon}:</b> ${monitor.monitor_name} (${monitor.monitor_phone})</p>
+                                        <a href="/download-id-pdf/${student.student_id}" style="display:inline-block; padding:10px; background:#27ae60; color:white; text-decoration:none; border-radius:5px; font-weight:bold;">${t.idbtn}</a>
+                                    </div>
+                                </div>
+
+                                <div class="card">
+                                    <h3>📚 ${t.crs}</h3>
+                                    <table><tr><th>Code</th><th>Title</th><th>Cr.Hr</th><th>Instructor</th></tr>${courseRows||'<tr><td colspan="4">No courses</td></tr>'}</table>
+                                </div>
+
+                                <div class="card">
+                                    <h3>📊 ${t.asm}</h3>
+                                    <table><tr><th>Quiz(20)</th><th>Mid(30)</th><th>Final(50)</th><th>Total(100)</th><th>Remark</th></tr>
+                                    <tr><td>${student.quiz||'-'}</td><td>${student.mid||'-'}</td><td>${student.final||'-'}</td><td><strong>${student.total||'-'}</strong></td><td>${student.remark||'N/A'}</td></tr></table>
+                                </div>
+
+                                <div class="card" style="background:#fdf2e9; border: 1px solid #e67e22;">
+                                    <h3 style="color:#d35400;">${t.abs}</h3>
+                                    <p style="font-size:13px; color:#555;">${t.absDesc}</p>
+                                    <form action="/student/absence" method="POST">
+                                        <textarea name="reason" placeholder="Write your problem/reason here... (ችግርዎን እዚህ ይጻፉ...)" style="width:100%; padding:10px; margin-bottom:10px; border-radius:5px; border:1px solid #ccc;" rows="3" required></textarea>
+                                        <button type="submit" style="background:#e67e22; color:white; padding:10px; border:none; border-radius:5px; width:100%; cursor:pointer; font-weight:bold;">${t.absBtn}</button>
                                     </form>
+                                    <hr style="margin:15px 0;">
+                                    <h4>${t.myAbs}</h4>
+                                    ${myAbsRows || '<p style="font-size:12px; color:#777;">No requests sent yet.</p>'}
                                 </div>
-                                <div style="flex:1;">
-                                    <h3>${student.name} (${student.student_id})</h3>
-                                    <p><b>${t.cls}:</b> ${student.class_level} | <b>${t.mon}:</b> ${monitor.monitor_name} (${monitor.monitor_phone})</p>
-                                    <a href="/download-id-pdf/${student.student_id}" style="display:inline-block; padding:10px; background:#27ae60; color:white; text-decoration:none; border-radius:5px; font-weight:bold;">${t.idbtn}</a>
-                                </div>
+                                <a href="/logout" style="color:red; font-weight:bold; font-size:18px;">🔒 Logout</a>
                             </div>
-
-                            <div class="card">
-                                <h3>📚 ${t.crs}</h3>
-                                <table><tr><th>Code</th><th>Title</th><th>Cr.Hr</th><th>Instructor</th></tr>${courseRows||'<tr><td colspan="4">No courses</td></tr>'}</table>
-                            </div>
-
-                            <div class="card">
-                                <h3>📊 ${t.asm}</h3>
-                                <table><tr><th>Quiz(20)</th><th>Mid(30)</th><th>Final(50)</th><th>Total(100)</th><th>Remark</th></tr>
-                                <tr><td>${student.quiz||'-'}</td><td>${student.mid||'-'}</td><td>${student.final||'-'}</td><td><strong>${student.total||'-'}</strong></td><td>${student.remark||'N/A'}</td></tr></table>
-                            </div>
-
-                            <div class="card" style="background:#fdf2e9; border: 1px solid #e67e22;">
-                                <h3 style="color:#d35400;">${t.abs}</h3>
-                                <p style="font-size:13px; color:#555;">${t.absDesc}</p>
-                                <form action="/student/absence" method="POST">
-                                    <textarea name="reason" placeholder="Write your problem/reason here... (ችግርዎን እዚህ ይጻፉ...)" style="width:100%; padding:10px; margin-bottom:10px; border-radius:5px; border:1px solid #ccc;" rows="3" required></textarea>
-                                    <button type="submit" style="background:#e67e22; color:white; padding:10px; border:none; border-radius:5px; width:100%; cursor:pointer; font-weight:bold;">${t.absBtn}</button>
-                                </form>
-                            </div>
-                            <a href="/logout" style="color:red; font-weight:bold; font-size:18px;">🔒 Logout</a>
-                        </div>
-                    </body></html>`);
+                        </body></html>`);
+                    });
                 });
             });
         });
     });
 });
 
-// STUDENT PHOTO UPDATE ROUTE
 app.post('/student/update-photo', upload.single('new_photo'), (req, res) => {
     if (!req.session.studentId) return res.redirect('/');
     if (req.file) {
@@ -1065,14 +1090,14 @@ app.post('/student/absence', (req, res) => {
     if (!req.session.studentId) return res.redirect('/');
     db.get('SELECT name, class_level FROM students WHERE student_id=?', [req.session.studentId], (err, st) => {
         if(st) {
-            let timestamp = new Date().toLocaleString(); // Contains Date and Time
-            db.run(`INSERT INTO absence_requests (student_id, student_name, class_level, reason, created_at) VALUES (?, ?, ?, ?, ?)`, 
-            [req.session.studentId, st.name, st.class_level, `[${timestamp}] - ${req.body.reason}`, timestamp], () => res.redirect('/student-dashboard'));
+            let timestamp = new Date().toLocaleString(); 
+            db.run(`INSERT INTO absence_requests (student_id, student_name, class_level, reason, teacher_feedback, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`, 
+            [req.session.studentId, st.name, st.class_level, req.body.reason, '', 'Pending', timestamp], () => res.redirect('/student-dashboard'));
         }
     });
 });
 
-// ================= DIGITAL ID PDF GENERATOR =================
+// DIGITAL ID PDF 
 app.get('/download-id-pdf/:id', (req, res) => {
     db.get(`SELECT * FROM students WHERE student_id = ?`, [req.params.id], (err, student) => {
         if (!student) return res.send('Student not found');
