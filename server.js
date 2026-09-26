@@ -24,7 +24,6 @@ const db = new sqlite3.Database(dbFile, (err) => {
 });
 
 db.serialize(() => {
-    // Note: father_name remains in schema for backwards compatibility but is ignored in UI/Queries
     db.run(`CREATE TABLE IF NOT EXISTS students (
         student_id TEXT PRIMARY KEY, password TEXT, name TEXT, father_name TEXT, mother_name TEXT,
         gender TEXT, age INTEGER, phone TEXT, emergency_phone TEXT, region TEXT, zone TEXT,
@@ -60,12 +59,12 @@ db.serialize(() => {
         id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE, monitor_name TEXT, monitor_phone TEXT
     )`);
 
-    // New Table for Notifications (Admin & Teacher)
+    // Notifications Table (Admin & Teacher)
     db.run(`CREATE TABLE IF NOT EXISTS notifications (
         id INTEGER PRIMARY KEY AUTOINCREMENT, sender_role TEXT, sender_name TEXT, target_audience TEXT, message TEXT, created_at TEXT
     )`);
 
-    // New Table for Student Absence Requests
+    // Student Absence Requests Table
     db.run(`CREATE TABLE IF NOT EXISTS absence_requests (
         id INTEGER PRIMARY KEY AUTOINCREMENT, student_id TEXT, student_name TEXT, class_level TEXT, reason TEXT, created_at TEXT
     )`);
@@ -119,8 +118,10 @@ function assignClassSection(requestedYearLevel, callback) {
         if (index >= letters.length) return callback(`${requestedYearLevel} - Section Overflow`);
         let secName = `${requestedYearLevel} - Section ${letters[index]}`;
         db.get(`SELECT COUNT(*) as c FROM students WHERE class_level = ?`, [secName], (err, r1) => {
+            if (err) console.error(err);
             db.get(`SELECT COUNT(*) as c FROM pending_students WHERE class_level = ?`, [secName], (err, r2) => {
-                let total = (r1 ? r1.c : 0) + (r2 ? r2.c : 0);
+                if (err) console.error(err);
+                let total = (r1 && r1.c ? r1.c : 0) + (r2 && r2.c ? r2.c : 0);
                 if (total < 50) { ensureSectionExists(secName); callback(secName); }
                 else checkNext(index + 1);
             });
@@ -138,7 +139,7 @@ function csvCell(v) {
 
 function esc(v) { return v === null || v === undefined ? '' : String(v).replace(/"/g, '&quot;'); }
 
-// LANDING PAGE
+// ================= LANDING PAGE =================
 app.get('/', (req, res) => {
     const lang = req.query.lang === 'en' ? 'en' : 'am';
     const t = lang === 'en' ? {
@@ -171,7 +172,7 @@ app.get('/', (req, res) => {
     </body></html>`);
 });
 
-// ============== FORGOT PASSWORD ==============
+// ================= FORGOT PASSWORD =================
 app.get('/forgot-password', (req, res) => {
     const lang = req.query.lang === 'en' ? 'en' : 'am';
     const t = lang === 'en' ? {
@@ -232,19 +233,21 @@ app.post('/api/forgot-password', (req, res) => {
     });
 });
 
-// STUDENT REGISTRATION (Removed Father's Name)
+// ================= STUDENT REGISTRATION =================
 app.get('/student-register', (req, res) => {
     const lang = req.query.lang === 'en' ? 'en' : 'am';
     const t = lang === 'en' ? {
         title: "📝 Student Registration Form", name: "Full Name:", mot: "Mother's Name:",
         gen: "Gender:", m: "Male", f: "Female", age: "Age:", ph: "Phone:", eph: "Emergency:", reg: "Region:",
         zon: "Zone:", wor: "Woreda:", keb: "Kebele:", yr: "Grade Level:",
-        pic: "Passport Photo:", pay: "Payment Type:", t1: "Transaction ID", t2: "Upload Slip", btn: "Submit", back: "Back"
+        pic: "Passport Photo:", pay: "Payment Type:", t1: "Transaction ID", t2: "Upload Slip", btn: "Submit", back: "Back",
+        loading: "⏳ Loading... Please wait"
     } : {
         title: "📝 የተማሪዎች ምዝገባ ፎርም", name: "ሙሉ ስም:", mot: "የእናት ስም:",
         gen: "ጾታ:", m: "ወንድ", f: "ሴት", age: "ዕድሜ:", ph: "ስልክ:", eph: "የአደጋ ጊዜ ተጠሪ:", reg: "ክልል:",
         zon: "ዞን:", wor: "ወረዳ:", keb: "ቀበሌ:", yr: "የክፍል ደረጃ (Grade):",
-        pic: "ጉርድ ፎቶ:", pay: "የክፍያ ማረጋገጫ:", t1: "የትራንዛክሽን ቁጥር", t2: "የደረሰኝ ፎቶ ያያይዙ", btn: "ምዝገባ ላክ", back: "ተመለስ"
+        pic: "ጉርድ ፎቶ:", pay: "የክፍያ ማረጋገጫ:", t1: "የትራንዛክሽን ቁጥር", t2: "የደረሰኝ ፎቶ ያያይዙ", btn: "ምዝገባ ላክ", back: "ተመለስ",
+        loading: "⏳ እባክዎ ይጠብቁ... (Loading)"
     };
 
     let gradeOptions = '';
@@ -254,13 +257,13 @@ app.get('/student-register', (req, res) => {
 
     res.send(`
     <!DOCTYPE html><html lang="${lang}"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Registration</title>
-    <style>body{font-family:sans-serif; background:#eef2f5; padding:15px;} .box{max-width:600px; margin:auto; background:white; padding:25px; border-radius:10px;} input,select{width:100%; padding:10px; margin:5px 0 15px; border:1px solid #ccc; border-radius:5px;} .row{display:flex; gap:10px;} .col{flex:1;} button{width:100%; padding:12px; background:#27ae60; color:white; font-weight:bold; border:none; border-radius:5px;}</style>
+    <style>body{font-family:sans-serif; background:#eef2f5; padding:15px;} .box{max-width:600px; margin:auto; background:white; padding:25px; border-radius:10px;} input,select{width:100%; padding:10px; margin:5px 0 15px; border:1px solid #ccc; border-radius:5px;} .row{display:flex; gap:10px;} .col{flex:1;} button{width:100%; padding:12px; background:#27ae60; color:white; font-weight:bold; border:none; border-radius:5px; cursor:pointer;} button:disabled {background:#95a5a6; cursor:not-allowed;}</style>
     </head><body>
         <div class="box">
             <div style="text-align:right;"><a href="/student-register?lang=am">አማርኛ</a> | <a href="/student-register?lang=en">English</a></div>
             <img src="/uploads/logo.jpg" onerror="this.style.display='none'" style="width: 80px; height: 80px; display: block; margin: 0 auto 10px; border-radius: 50%;">
             <h2>${t.title}</h2>
-            <form action="/api/register?lang=${lang}" method="POST" enctype="multipart/form-data">
+            <form action="/api/register?lang=${lang}" method="POST" enctype="multipart/form-data" onsubmit="document.getElementById('subBtn').disabled=true; document.getElementById('subBtn').innerText='${t.loading}';">
                 
                 <div class="row"><div class="col"><label>${t.name}</label><input type="text" name="name" required></div><div class="col"><label>${t.mot}</label><input type="text" name="mother_name" required></div></div>
                 <div class="row"><div class="col"><label>${t.gen}</label><select name="gender"><option value="Male">${t.m}</option><option value="Female">${t.f}</option></select></div><div class="col"><label>${t.age}</label><input type="number" name="age" required></div></div>
@@ -274,7 +277,8 @@ app.get('/student-register', (req, res) => {
                 </select>
                 <div id="txnBox"><input type="text" name="txn_id" placeholder="Transaction ID"></div>
                 <div id="slipBox" style="display:none;"><input type="file" name="bank_slip_file" accept="image/*,.pdf"></div>
-                <button type="submit">${t.btn}</button>
+                
+                <button type="submit" id="subBtn">${t.btn}</button>
             </form><br><a href="/?lang=${lang}">${t.back}</a>
         </div>
     </body></html>`);
@@ -282,35 +286,49 @@ app.get('/student-register', (req, res) => {
 
 app.post('/api/register', upload.fields([{ name: 'student_photo', maxCount: 1 }, { name: 'bank_slip_file', maxCount: 1 }]), (req, res) => {
     const lang = req.query.lang || 'am';
-    let { name, mother_name, gender, age, phone, emergency_phone, region, zone, woreda, kebele, year_level, payment_type, txn_id } = req.body;
-    let autoID = generateStudentID(); let autoPIN = generate4DigitPIN();
+    
+    try {
+        let { name, mother_name, gender, age, phone, emergency_phone, region, zone, woreda, kebele, year_level, payment_type, txn_id } = req.body;
+        let autoID = generateStudentID(); 
+        let autoPIN = generate4DigitPIN();
 
-    assignClassSection(year_level, (assignedSection) => {
-        let photoPath = req.files['student_photo'] ? req.files['student_photo'][0].filename : '';
-        let slipPath = payment_type === 'slip_file' && req.files['bank_slip_file'] ? req.files['bank_slip_file'][0].filename : txn_id;
+        assignClassSection(year_level, (assignedSection) => {
+            let photoPath = (req.files && req.files['student_photo']) ? req.files['student_photo'][0].filename : '';
+            let slipPath = payment_type === 'slip_file' && (req.files && req.files['bank_slip_file']) ? req.files['bank_slip_file'][0].filename : txn_id;
 
-        db.run(`INSERT INTO pending_students (student_id, password, name, father_name, mother_name, gender, age, phone, emergency_phone, region, zone, woreda, kebele, class_level, payment_type, bank_slip_val, photo) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-        [autoID, autoPIN, name, '', mother_name, gender, age, phone, emergency_phone, region, zone, woreda, kebele, assignedSection, payment_type, slipPath, photoPath], function() {
-            const t = lang === 'en' ? {
-                sent: "Request Sent!", pending: "Your payment has been sent to the Admin for review. You will be able to log in once approved.",
-                cls: "Class", idL: "ID Number", pinL: "Password PIN"
-            } : {
-                sent: "ጥያቄዎ ተልኳል!", pending: "የክፍያ ማረጋገጫዎ ለአድሚን ገምጋሚ ተልኳል። ሲፈቀድ መግባት ይችላሉ።",
-                cls: "ክፍል", idL: "የመታወቂያ ቁጥር", pinL: "የሚስጥር ቁጥር"
-            };
-            res.send(`
-            <div style="text-align:center; padding:40px; font-family:sans-serif;">
-                <h2 style="color:green;">✅ ${t.sent}</h2>
-                <div style="background:#eef2f5; display:inline-block; padding:20px; border-radius:8px; text-align:left;">
-                    <p><strong>${t.cls}:</strong> ${assignedSection}</p>
-                    <p><strong>${t.idL}:</strong> <span style="color:red; font-size:20px;">${autoID}</span></p>
-                    <p><strong>${t.pinL}:</strong> <span style="color:red; font-size:20px;">${autoPIN}</span></p>
-                    <p style="color:#e67e22; font-size:13px;">⏳ ${t.pending}</p>
-                    <p><a href="/download-pending-slip/${this.lastID}" style="background:#e67e22; color:white; padding:10px; text-decoration:none; border-radius:5px;">📥 Download Full Registration PDF</a></p>
-                </div><br><br><a href="/?lang=${lang}">Home</a>
-            </div>`);
+            db.run(`INSERT INTO pending_students (student_id, password, name, father_name, mother_name, gender, age, phone, emergency_phone, region, zone, woreda, kebele, class_level, payment_type, bank_slip_val, photo) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+            [autoID, autoPIN, name, '', mother_name, gender, age, phone, emergency_phone, region, zone, woreda, kebele, assignedSection, payment_type, slipPath, photoPath], function(err) {
+                
+                if (err) {
+                    console.error("Database Insert Error:", err);
+                    return res.send(`<div style="text-align:center; padding:40px; font-family:sans-serif;"><h3 style="color:red;">❌ የዳታቤዝ ስህተት አጋጥሟል። እባክዎ እንደገና ይሞክሩ!</h3><br><a href="/student-register?lang=${lang}">ወደ ኋላ ተመለስ (Back)</a></div>`);
+                }
+
+                const t = lang === 'en' ? {
+                    sent: "Request Sent!", pending: "Your registration has been sent to the Admin for review. You will be able to log in once approved.",
+                    cls: "Class", idL: "ID Number", pinL: "Password PIN"
+                } : {
+                    sent: "ጥያቄዎ ተልኳል!", pending: "ምዝገባዎ ለአድሚን ገምጋሚ ተልኳል። ሲፈቀድ መግባት ይችላሉ።",
+                    cls: "ክፍል", idL: "የመታወቂያ ቁጥር", pinL: "የሚስጥር ቁጥር"
+                };
+                
+                res.send(`
+                <div style="text-align:center; padding:40px; font-family:sans-serif;">
+                    <h2 style="color:green;">✅ ${t.sent}</h2>
+                    <div style="background:#eef2f5; display:inline-block; padding:20px; border-radius:8px; text-align:left;">
+                        <p><strong>${t.cls}:</strong> ${assignedSection}</p>
+                        <p><strong>${t.idL}:</strong> <span style="color:red; font-size:20px;">${autoID}</span></p>
+                        <p><strong>${t.pinL}:</strong> <span style="color:red; font-size:20px;">${autoPIN}</span></p>
+                        <p style="color:#e67e22; font-size:13px;">⏳ ${t.pending}</p>
+                        <p><a href="/download-pending-slip/${this.lastID}" style="background:#e67e22; color:white; padding:10px; text-decoration:none; border-radius:5px;">📥 Download Full Registration PDF</a></p>
+                    </div><br><br><a href="/?lang=${lang}">Home</a>
+                </div>`);
+            });
         });
-    });
+    } catch (error) {
+        console.error("Registration Processing Error:", error);
+        res.send(`<div style="text-align:center; padding:40px; font-family:sans-serif;"><h3 style="color:red;">❌ ስህተት ተከስቷል። ፎርሙን በድጋሚ ይሙሉ!</h3><br><a href="/student-register?lang=${lang}">ወደ ኋላ ተመለስ (Back)</a></div>`);
+    }
 });
 
 app.get('/download-pending-slip/:id', (req, res) => {
@@ -322,9 +340,7 @@ app.get('/download-pending-slip/:id', (req, res) => {
         doc.pipe(res);
 
         let schoolLogo = path.join(__dirname, 'uploads', 'logo.jpg');
-        if (fs.existsSync(schoolLogo)) {
-            doc.image(schoolLogo, 40, 20, { width: 40, height: 40 });
-        }
+        if (fs.existsSync(schoolLogo)) doc.image(schoolLogo, 40, 20, { width: 40, height: 40 });
 
         doc.fontSize(18).fillColor('#1f4e79').text('AMANUEL LIGHT AND LIFE SCHOOL', { align: 'center' });
         doc.fontSize(13).fillColor('#333').text('Student Registration Summary', { align: 'center' }).moveDown();
@@ -356,7 +372,7 @@ app.get('/download-pending-slip/:id', (req, res) => {
     });
 });
 
-// LOGIN
+// ================= LOGIN =================
 app.post('/login', (req, res) => {
     const lang = req.query.lang || 'am';
     const { role, username, password } = req.body;
@@ -718,7 +734,7 @@ app.post('/admin/import-students', csvUpload.single('csv_file'), (req, res) => {
     processRow(0);
 });
 
-// TEACHER DASHBOARD
+// ================= TEACHER DASHBOARD =================
 app.get('/teacher-dashboard', (req, res) => {
     if (!req.session.teacherId) return res.redirect('/');
     const lang = req.query.lang === 'en' ? 'en' : 'am';
@@ -816,7 +832,7 @@ app.post('/teacher/save-grade', (req, res) => {
     [student_id, quiz, mid, final, total, total>=50?'Pass':'Fail', quiz, mid, final, total, total>=50?'Pass':'Fail'], () => res.redirect('/teacher-dashboard'));
 });
 
-// STUDENT DASHBOARD
+// ================= STUDENT DASHBOARD =================
 app.get('/student-dashboard', (req, res) => {
     if (!req.session.studentId) return res.redirect('/');
     const lang = req.query.lang || 'am';
@@ -905,7 +921,7 @@ app.post('/student/absence', (req, res) => {
     });
 });
 
-// DIGITAL ID PDF 
+// ================= DIGITAL ID PDF GENERATOR =================
 app.get('/download-id-pdf/:id', (req, res) => {
     db.get(`SELECT * FROM students WHERE student_id = ?`, [req.params.id], (err, student) => {
         if (!student) return res.send('Student not found');
