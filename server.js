@@ -67,7 +67,6 @@ db.serialize(() => {
         id INTEGER PRIMARY KEY AUTOINCREMENT, student_id TEXT, student_name TEXT, class_level TEXT, reason TEXT, teacher_feedback TEXT, status TEXT, created_at TEXT
     )`);
 
-    // Table for Daily Attendance (✅ / ❌)
     db.run(`CREATE TABLE IF NOT EXISTS daily_attendance (
         id INTEGER PRIMARY KEY AUTOINCREMENT, student_id TEXT, student_name TEXT, class_level TEXT, date TEXT, status TEXT
     )`);
@@ -140,7 +139,6 @@ function csvCell(v) {
 
 function esc(v) { return v === null || v === undefined ? '' : String(v).replace(/"/g, '&quot;'); }
 
-// LANDING PAGE
 app.get('/', (req, res) => {
     const lang = req.query.lang === 'en' ? 'en' : 'am';
     const t = lang === 'en' ? {
@@ -173,7 +171,6 @@ app.get('/', (req, res) => {
     </body></html>`);
 });
 
-// FORGOT PASSWORD
 app.get('/forgot-password', (req, res) => {
     const lang = req.query.lang === 'en' ? 'en' : 'am';
     const t = lang === 'en' ? {
@@ -234,7 +231,6 @@ app.post('/api/forgot-password', (req, res) => {
     });
 });
 
-// STUDENT REGISTRATION
 app.get('/student-register', (req, res) => {
     const lang = req.query.lang === 'en' ? 'en' : 'am';
     const t = lang === 'en' ? {
@@ -373,7 +369,6 @@ app.get('/download-pending-slip/:id', (req, res) => {
     });
 });
 
-// LOGIN
 app.post('/login', (req, res) => {
     const lang = req.query.lang || 'am';
     const { role, username, password } = req.body;
@@ -402,12 +397,12 @@ app.get('/admin', (req, res) => {
         title: "Admin Dashboard", sec: "Manage Sections", pend: "Pending Registrations",
         teach: "Manage Teachers", courses: "Manage Courses", stud: "All Students",
         noti: "Broadcast Notification to All Students", logout: "Logout",
-        directorReport: "📁 Director Weekly Reports (Friday Attendance)"
+        directorReport: "📁 Director Weekly Reports (September - May Attendance)"
     } : {
         title: "የአድሚን መቆጣጠሪያ", sec: "ክፍሎችን ማስተዳደሪያ", pend: "አዲስ ተመዝጋቢዎች",
         teach: "መምህራንን ማስተዳደሪያ", courses: "ትምህርቶችን ማስተዳደሪያ", stud: "ሁሉም ተማሪዎች",
         noti: "ለማንኛውም ተማሪ ማስታወቂያ ላክ (Broadcast)", logout: "ውጣ",
-        directorReport: "📁 የዳይሬክተር ሳምንታዊ ሪፖርት (የአርብ መገኘት)"
+        directorReport: "📁 የዳይሬክተር ሳምንታዊ እና ወርሃዊ ሪፖርት (ከሴፕቴምበር እስከ መይ)"
     };
 
     db.all(`SELECT * FROM pending_students`, [], (err, pending) => {
@@ -471,8 +466,8 @@ app.get('/admin', (req, res) => {
 
                             <div class="card">
                                 <h3>${t.directorReport}</h3>
-                                <p style="font-size:13px; color:#555;">የአርብ አርብ የክፍል መገኘት ሪፖርት አጠናቅሮ ለዳይሬክተር ለማድረስ ከታች ያለውን ሊንክ ይጠገሙ (ለዳይሬክተር ማሳያ ሚያገለግል):</p>
-                                <a href="/director-report" target="_blank" style="background:#8e44ad; color:white; padding:10px 15px; text-decoration:none; border-radius:5px; font-weight:bold; display:inline-block;">📁 View Director Weekly Friday Report</a>
+                                <p style="font-size:13px; color:#555;">ከሴፕቴምበር እስከ መይ (September - May) ያለው የአርብ አርብ መገኘት ሪፖርት ለዳይሬክተር ከዚህ በታች ይመልከቱ:</p>
+                                <a href="/director-report" target="_blank" style="background:#8e44ad; color:white; padding:10px 15px; text-decoration:none; border-radius:5px; font-weight:bold; display:inline-block;">📁 View Director Academic Year Report (Sept-May)</a>
                             </div>
 
                             <div class="card"><h3>${t.pend}</h3><table><tr><th>Photo</th><th>ID</th><th>Name</th><th>Payment</th><th>Action</th></tr>${pRows||'<tr><td colspan="5">None</td></tr>'}</table></div>
@@ -540,14 +535,14 @@ app.post('/admin/send-notification', (req, res) => {
         ['Admin', 'School Admin', 'ALL', req.body.message, new Date().toLocaleString()], () => res.redirect('/admin'));
 });
 
-// ATTENDANCE SHEET (1 TO 50 STUDENTS WITH ✅ and ❌)
+// DAILY ATTENDANCE (MONDAY - FRIDAY) & 1 TO 50 SLOTS
 app.get('/attendance-sheet/:secName', (req, res) => {
     if (!req.session.isAdmin && !req.session.teacherId) return res.redirect('/');
     let sec = decodeURIComponent(req.params.secName);
     db.all(`SELECT * FROM students WHERE class_level = ? ORDER BY name`, [sec], (err, students) => {
         
         let rowsHtml = '';
-        let totalRows = 50; // Holds up to 50 slots
+        let totalRows = 50; 
         
         for (let i = 0; i < totalRows; i++) {
             let st = students[i];
@@ -558,8 +553,11 @@ app.get('/attendance-sheet/:secName', (req, res) => {
                     <td>${st.student_id}</td>
                     <td style="text-align:left;">${st.name}</td>
                     <td>${st.gender}</td>
-                    <td><input type="radio" name="att_${num}" value="Present"> ✅</td>
-                    <td><input type="radio" name="att_${num}" value="Absent"> ❌</td>
+                    <td><input type="radio" name="mon_${st.student_id}" value="Present"> ✅ / <input type="radio" name="mon_${st.student_id}" value="Absent"> ❌</td>
+                    <td><input type="radio" name="tue_${st.student_id}" value="Present"> ✅ / <input type="radio" name="tue_${st.student_id}" value="Absent"> ❌</td>
+                    <td><input type="radio" name="wed_${st.student_id}" value="Present"> ✅ / <input type="radio" name="wed_${st.student_id}" value="Absent"> ❌</td>
+                    <td><input type="radio" name="thu_${st.student_id}" value="Present"> ✅ / <input type="radio" name="thu_${st.student_id}" value="Absent"> ❌</td>
+                    <td><input type="radio" name="fri_${st.student_id}" value="Present"> ✅ / <input type="radio" name="fri_${st.student_id}" value="Absent"> ❌</td>
                 </tr>`;
             } else {
                 rowsHtml += `<tr>
@@ -567,8 +565,11 @@ app.get('/attendance-sheet/:secName', (req, res) => {
                     <td>&nbsp;</td>
                     <td>&nbsp;</td>
                     <td>&nbsp;</td>
-                    <td><input type="radio" name="att_${num}" value="Present"> ✅</td>
-                    <td><input type="radio" name="att_${num}" value="Absent"> ❌</td>
+                    <td><input type="radio" name="m_b${num}" value="Present"> ✅ / <input type="radio" name="m_b${num}" value="Absent"> ❌</td>
+                    <td><input type="radio" name="tu_b${num}" value="Present"> ✅ / <input type="radio" name="tu_b${num}" value="Absent"> ❌</td>
+                    <td><input type="radio" name="w_b${num}" value="Present"> ✅ / <input type="radio" name="w_b${num}" value="Absent"> ❌</td>
+                    <td><input type="radio" name="th_b${num}" value="Present"> ✅ / <input type="radio" name="th_b${num}" value="Absent"> ❌</td>
+                    <td><input type="radio" name="f_b${num}" value="Present"> ✅ / <input type="radio" name="f_b${num}" value="Absent"> ❌</td>
                 </tr>`;
             }
         }
@@ -577,8 +578,8 @@ app.get('/attendance-sheet/:secName', (req, res) => {
         <!DOCTYPE html><html><head><meta charset="UTF-8"><title>Attendance Sheet - ${sec}</title>
         <style>
             body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 20px; background: #fff; }
-            .sheet-table { width: 100%; border-collapse: collapse; font-size:13px; }
-            .sheet-table th, .sheet-table td { border: 1px solid #000; padding: 5px 8px; text-align: center; height: 22px; }
+            .sheet-table { width: 100%; border-collapse: collapse; font-size:12px; }
+            .sheet-table th, .sheet-table td { border: 1px solid #000; padding: 4px 6px; text-align: center; height: 22px; }
             .sheet-table th { background: #d9d9d9; color: #000; }
             .header-bar { display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; }
             button { background: #107c41; color: white; border: none; padding: 8px 15px; border-radius: 4px; cursor: pointer; font-weight:bold; }
@@ -588,7 +589,7 @@ app.get('/attendance-sheet/:secName', (req, res) => {
             <div class="header-bar">
                 <div>
                     <h2>AMANUEL LIGHT AND LIFE SCHOOL</h2>
-                    <h3>📋 Daily Attendance & Name Calling Sheet (✅/❌) - Class: ${sec}</h3>
+                    <h3>📋 Daily Attendance (Monday - Friday) - Class: ${sec}</h3>
                 </div>
                 <div><button onclick="window.print()">🖨️ Print Sheet</button> <button onclick="window.close()">❌ Close</button></div>
             </div>
@@ -598,44 +599,57 @@ app.get('/attendance-sheet/:secName', (req, res) => {
                     <th>Student ID</th>
                     <th>Student Full Name</th>
                     <th>Gender</th>
-                    <th>Present (✅)</th>
-                    <th>Absent (❌)</th>
+                    <th>Monday</th>
+                    <th>Tuesday</th>
+                    <th>Wednesday</th>
+                    <th>Thursday</th>
+                    <th>Friday (Director Report)</th>
                 </tr>
                 ${rowsHtml}
             </table>
             <br><br>
             <div style="display:flex; justify-content:space-between; font-weight:bold;">
                 <p>Teacher's Signature: ______________________</p>
-                <p>Director's Signature (Friday Submit): ______________________</p>
+                <p>Director's Signature (Friday Approval): ______________________</p>
             </div>
         </body></html>`);
     });
 });
 
-// DIRECTOR FRIDAY REPORT VIEW ROUTE
+// DIRECTOR FRIDAY & MONTHLY/YEARLY REPORT (SEPTEMBER - MAY)
 app.get('/director-report', (req, res) => {
     if (!req.session.isAdmin) return res.redirect('/');
     db.all(`SELECT * FROM sections ORDER BY name`, [], (err, sections) => {
         db.all(`SELECT * FROM students ORDER BY class_level`, [], (err, students) => {
             
-            let reportContent = sections.map(sec => {
-                let classStudents = students.filter(s => s.class_level === sec.name);
-                let studentList = classStudents.map((s, idx) => `<tr><td>${idx+1}</td><td>${s.student_id}</td><td style="text-align:left;">${s.name}</td><td>[  ] Present (✅) &nbsp;&nbsp; [  ] Absent (❌)</td></tr>`).join('');
-                
-                return `<div style="margin-bottom:30px; page-break-inside: avoid;">
-                    <h3 style="background:#2c3e50; color:white; padding:8px; margin:0;">Class: ${sec.name} (Total Students: ${classStudents.length})</h3>
-                    <table border="1" width="100%" style="border-collapse:collapse; text-align:center; font-size:13px;">
-                        <tr style="background:#f2f2f2;"><th>No</th><th>ID</th><th>Full Name</th><th>Friday Attendance Verification (✅ / ❌)</th></tr>
-                        ${studentList || '<tr><td colspan="4">No students in this section</td></tr>'}
-                    </table>
+            // Months from September to May
+            const months = ["September", "October", "November", "December", "January", "February", "March", "April", "May"];
+            
+            let monthSections = months.map(m => {
+                let sectionContent = sections.map(sec => {
+                    let classStudents = students.filter(s => s.class_level === sec.name);
+                    let studentList = classStudents.map((s, idx) => `<tr><td>${idx+1}</td><td>${s.student_id}</td><td style="text-align:left;">${s.name}</td><td>[  ] Present (✅) &nbsp;&nbsp; [  ] Absent (❌)</td></tr>`).join('');
+                    
+                    return `<div style="margin-bottom:20px;">
+                        <h4 style="background:#34495e; color:white; padding:6px; margin:0;">Class: ${sec.name}</h4>
+                        <table border="1" width="100%" style="border-collapse:collapse; text-align:center; font-size:12px;">
+                            <tr style="background:#f2f2f2;"><th>No</th><th>ID</th><th>Full Name</th><th>Friday Verification (✅ / ❌)</th></tr>
+                            ${studentList || '<tr><td colspan="4">No students</td></tr>'}
+                        </table>
+                    </div>`;
+                }).join('');
+
+                return `<div style="margin-bottom:40px; page-break-after: always;">
+                    <h2 style="background:#2c3e50; color:white; padding:10px; text-align:center;">📅 Month: ${m} (Academic Year: September - May)</h2>
+                    ${sectionContent}
                 </div>`;
             }).join('');
 
             res.send(`
-            <!DOCTYPE html><html><head><meta charset="UTF-8"><title>Director Weekly Report</title>
+            <!DOCTYPE html><html><head><meta charset="UTF-8"><title>Director Academic Year Report (Sept-May)</title>
             <style>
                 body { font-family: sans-serif; padding: 20px; background: white; }
-                table th, table td { border: 1px solid #ccc; padding: 6px; }
+                table th, table td { border: 1px solid #ccc; padding: 5px; }
                 .header { text-align: center; margin-bottom: 20px; }
                 button { background: #8e44ad; color: white; border: none; padding: 10px 20px; border-radius: 5px; font-weight: bold; cursor: pointer; }
                 @media print { button { display: none; } }
@@ -643,10 +657,10 @@ app.get('/director-report', (req, res) => {
             </head><body>
                 <div class="header">
                     <h2>AMANUEL LIGHT AND LIFE SCHOOL</h2>
-                    <h3>📁 Weekly Friday Attendance Report Submitted for Director (የአርብ ሳምንታዊ መገኘት ሪፖርት)</h3>
-                    <button onclick="window.print()">🖨️ Print Friday Report for Director</button>
+                    <h3>📁 Director Comprehensive Attendance Report (September to May - Weekly Friday Records)</h3>
+                    <button onclick="window.print()">🖨️ Print Full Report for Director</button>
                 </div>
-                ${reportContent}
+                ${monthSections}
                 <br><br>
                 <div style="display:flex; justify-content:space-between; font-weight:bold; margin-top:40px;">
                     <p>Prepared by Registrar / Admin: ___________________</p>
@@ -657,7 +671,6 @@ app.get('/director-report', (req, res) => {
     });
 });
 
-// EXCEL-LIKE GRADES VIEW
 app.get('/view-excel/:secName', (req, res) => {
     if (!req.session.isAdmin && !req.session.teacherId) return res.redirect('/');
     let sec = decodeURIComponent(req.params.secName);
@@ -762,7 +775,6 @@ app.get('/admin/delete-student/:id', (req, res) => {
     });
 });
 
-// Teachers
 app.post('/admin/add-teacher', (req, res) => {
     if (!req.session.isAdmin) return res.redirect('/');
     let { name, dept, phone, assigned_section } = req.body;
@@ -900,7 +912,7 @@ app.get('/teacher-dashboard', (req, res) => {
                         <div style="text-align:right;"><a href="/teacher-dashboard?lang=am">አማርኛ</a> | <a href="/teacher-dashboard?lang=en">English</a></div>
                         <h2><img src="/uploads/logo.jpg" onerror="this.style.display='none'" style="height: 40px; border-radius: 50%; vertical-align: middle; margin-right: 10px;">👨‍🏫 Teacher Portal: ${teacher.name} (${teacher.assigned_section})</h2>
                         <div style="margin-bottom:15px;">
-                            <a href="/attendance-sheet/${encodeURIComponent(teacher.assigned_section)}" target="_blank" style="background:#2980b9; color:white; padding:10px; display:inline-block; border-radius:5px; text-decoration:none; margin-right:10px; font-weight:bold;">📋 Daily Attendance Sheet (✅/❌)</a>
+                            <a href="/attendance-sheet/${encodeURIComponent(teacher.assigned_section)}" target="_blank" style="background:#2980b9; color:white; padding:10px; display:inline-block; border-radius:5px; text-decoration:none; margin-right:10px; font-weight:bold;">📋 Daily Attendance (Mon-Fri)</a>
                             <a href="/view-excel/${encodeURIComponent(teacher.assigned_section)}" target="_blank" style="background:#107c41; color:white; padding:10px; display:inline-block; border-radius:5px; text-decoration:none; font-weight:bold;">📊 View Grades in Excel Format</a>
                         </div>
 
@@ -1097,7 +1109,6 @@ app.post('/student/absence', (req, res) => {
     });
 });
 
-// DIGITAL ID PDF 
 app.get('/download-id-pdf/:id', (req, res) => {
     db.get(`SELECT * FROM students WHERE student_id = ?`, [req.params.id], (err, student) => {
         if (!student) return res.send('Student not found');
