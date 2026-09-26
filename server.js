@@ -139,6 +139,7 @@ function csvCell(v) {
 
 function esc(v) { return v === null || v === undefined ? '' : String(v).replace(/"/g, '&quot;'); }
 
+// LANDING PAGE
 app.get('/', (req, res) => {
     const lang = req.query.lang === 'en' ? 'en' : 'am';
     const t = lang === 'en' ? {
@@ -171,6 +172,7 @@ app.get('/', (req, res) => {
     </body></html>`);
 });
 
+// FORGOT PASSWORD
 app.get('/forgot-password', (req, res) => {
     const lang = req.query.lang === 'en' ? 'en' : 'am';
     const t = lang === 'en' ? {
@@ -369,6 +371,7 @@ app.get('/download-pending-slip/:id', (req, res) => {
     });
 });
 
+// LOGIN
 app.post('/login', (req, res) => {
     const lang = req.query.lang || 'am';
     const { role, username, password } = req.body;
@@ -397,7 +400,7 @@ app.get('/admin', (req, res) => {
         title: "Admin Dashboard", sec: "Manage Sections", pend: "Pending Registrations",
         teach: "Manage Teachers", courses: "Manage Courses", stud: "All Students",
         noti: "Broadcast Notification to All Students", logout: "Logout",
-        directorReport: "📁 Director Weekly Reports (September - May Attendance)"
+        directorReport: "📁 Director Weekly/Monthly Reports (September - May Attendance)"
     } : {
         title: "የአድሚን መቆጣጠሪያ", sec: "ክፍሎችን ማስተዳደሪያ", pend: "አዲስ ተመዝጋቢዎች",
         teach: "መምህራንን ማስተዳደሪያ", courses: "ትምህርቶችን ማስተዳደሪያ", stud: "ሁሉም ተማሪዎች",
@@ -438,7 +441,7 @@ app.get('/admin', (req, res) => {
                                 <button type="submit">Save</button></form></td>
                             <td><a href="/admin/delete-section/${sec.id}?lang=${lang}" onclick="return confirm('Delete this section?')" style="color:red; font-weight:bold;">🗑️ Delete</a></td>
                             <td>
-                                <a href="/attendance-sheet/${encodeURIComponent(sec.name)}" style="color:#2980b9; font-weight:bold; margin-right:10px;" target="_blank">📋 Attendance (1-50)</a>
+                                <a href="/attendance-sheet/${encodeURIComponent(sec.name)}" style="color:#2980b9; font-weight:bold; margin-right:10px;" target="_blank">📋 Attendance Sheet</a>
                                 <a href="/view-excel/${encodeURIComponent(sec.name)}" style="color:#27ae60; font-weight:bold;" target="_blank">📊 Excel Grades</a>
                             </td>
                             </tr>`).join('');
@@ -466,7 +469,7 @@ app.get('/admin', (req, res) => {
 
                             <div class="card">
                                 <h3>${t.directorReport}</h3>
-                                <p style="font-size:13px; color:#555;">ከሴፕቴምበር እስከ መይ (September - May) ያለው የአርብ አርብ መገኘት ሪፖርት ለዳይሬክተር ከዚህ በታች ይመልከቱ:</p>
+                                <p style="font-size:13px; color:#555;">ከሴፕቴምበር እስከ መይ (September - May) ያለው የተማሪዎች መገኘት ሪፖርት ለዳይሬክተር ከዚህ በታች ይመልከቱ:</p>
                                 <a href="/director-report" target="_blank" style="background:#8e44ad; color:white; padding:10px 15px; text-decoration:none; border-radius:5px; font-weight:bold; display:inline-block;">📁 View Director Academic Year Report (Sept-May)</a>
                             </div>
 
@@ -535,84 +538,125 @@ app.post('/admin/send-notification', (req, res) => {
         ['Admin', 'School Admin', 'ALL', req.body.message, new Date().toLocaleString()], () => res.redirect('/admin'));
 });
 
-// DAILY ATTENDANCE (MONDAY - FRIDAY) & 1 TO 50 SLOTS
+// DAILY ATTENDANCE (MONDAY - FRIDAY) WITH SAVE FUNCTIONALITY
 app.get('/attendance-sheet/:secName', (req, res) => {
     if (!req.session.isAdmin && !req.session.teacherId) return res.redirect('/');
     let sec = decodeURIComponent(req.params.secName);
-    db.all(`SELECT * FROM students WHERE class_level = ? ORDER BY name`, [sec], (err, students) => {
-        
-        let rowsHtml = '';
-        let totalRows = 50; 
-        
-        for (let i = 0; i < totalRows; i++) {
-            let st = students[i];
-            let num = i + 1;
-            if (st) {
-                rowsHtml += `<tr>
-                    <td>${num}</td>
-                    <td>${st.student_id}</td>
-                    <td style="text-align:left;">${st.name}</td>
-                    <td>${st.gender}</td>
-                    <td><input type="radio" name="mon_${st.student_id}" value="Present"> ✅ / <input type="radio" name="mon_${st.student_id}" value="Absent"> ❌</td>
-                    <td><input type="radio" name="tue_${st.student_id}" value="Present"> ✅ / <input type="radio" name="tue_${st.student_id}" value="Absent"> ❌</td>
-                    <td><input type="radio" name="wed_${st.student_id}" value="Present"> ✅ / <input type="radio" name="wed_${st.student_id}" value="Absent"> ❌</td>
-                    <td><input type="radio" name="thu_${st.student_id}" value="Present"> ✅ / <input type="radio" name="thu_${st.student_id}" value="Absent"> ❌</td>
-                    <td><input type="radio" name="fri_${st.student_id}" value="Present"> ✅ / <input type="radio" name="fri_${st.student_id}" value="Absent"> ❌</td>
-                </tr>`;
-            } else {
-                rowsHtml += `<tr>
-                    <td>${num}</td>
-                    <td>&nbsp;</td>
-                    <td>&nbsp;</td>
-                    <td>&nbsp;</td>
-                    <td><input type="radio" name="m_b${num}" value="Present"> ✅ / <input type="radio" name="m_b${num}" value="Absent"> ❌</td>
-                    <td><input type="radio" name="tu_b${num}" value="Present"> ✅ / <input type="radio" name="tu_b${num}" value="Absent"> ❌</td>
-                    <td><input type="radio" name="w_b${num}" value="Present"> ✅ / <input type="radio" name="w_b${num}" value="Absent"> ❌</td>
-                    <td><input type="radio" name="th_b${num}" value="Present"> ✅ / <input type="radio" name="th_b${num}" value="Absent"> ❌</td>
-                    <td><input type="radio" name="f_b${num}" value="Present"> ✅ / <input type="radio" name="f_b${num}" value="Absent"> ❌</td>
-                </tr>`;
-            }
-        }
+    let selectedDate = req.query.date || new Date().toISOString().split('T')[0];
 
-        res.send(`
-        <!DOCTYPE html><html><head><meta charset="UTF-8"><title>Attendance Sheet - ${sec}</title>
-        <style>
-            body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 20px; background: #fff; }
-            .sheet-table { width: 100%; border-collapse: collapse; font-size:12px; }
-            .sheet-table th, .sheet-table td { border: 1px solid #000; padding: 4px 6px; text-align: center; height: 22px; }
-            .sheet-table th { background: #d9d9d9; color: #000; }
-            .header-bar { display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; }
-            button { background: #107c41; color: white; border: none; padding: 8px 15px; border-radius: 4px; cursor: pointer; font-weight:bold; }
-            @media print { button { display: none; } }
-        </style>
-        </head><body>
-            <div class="header-bar">
-                <div>
-                    <h2>AMANUEL LIGHT AND LIFE SCHOOL</h2>
-                    <h3>📋 Daily Attendance (Monday - Friday) - Class: ${sec}</h3>
+    db.all(`SELECT * FROM students WHERE class_level = ? ORDER BY name`, [sec], (err, students) => {
+        db.all(`SELECT * FROM daily_attendance WHERE class_level = ? AND date = ?`, [sec, selectedDate], (err, records) => {
+            
+            let attendanceMap = {};
+            records.forEach(r => { attendanceMap[r.student_id] = r.status; });
+
+            let rowsHtml = '';
+            let totalRows = 50; 
+            
+            for (let i = 0; i < totalRows; i++) {
+                let st = students[i];
+                let num = i + 1;
+                if (st) {
+                    let currentStatus = attendanceMap[st.student_id] || '';
+                    rowsHtml += `<tr>
+                        <td>${num}</td>
+                        <td>${st.student_id}</td>
+                        <td style="text-align:left;">${st.name}</td>
+                        <td>${st.gender}</td>
+                        <td>
+                            <label><input type="radio" name="status_${st.student_id}" value="Present" ${currentStatus==='Present'?'checked':''}> ✅ Present</label> &nbsp;
+                            <label><input type="radio" name="status_${st.student_id}" value="Absent" ${currentStatus==='Absent'?'checked':''}> ❌ Absent</label>
+                        </td>
+                    </tr>`;
+                } else {
+                    rowsHtml += `<tr>
+                        <td>${num}</td>
+                        <td>&nbsp;</td>
+                        <td>&nbsp;</td>
+                        <td>&nbsp;</td>
+                        <td>-</td>
+                    </tr>`;
+                }
+            }
+
+            res.send(`
+            <!DOCTYPE html><html><head><meta charset="UTF-8"><title>Attendance Sheet - ${sec}</title>
+            <style>
+                body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 20px; background: #fff; }
+                .sheet-table { width: 100%; border-collapse: collapse; font-size:13px; }
+                .sheet-table th, .sheet-table td { border: 1px solid #000; padding: 6px 10px; text-align: center; height: 25px; }
+                .sheet-table th { background: #d9d9d9; color: #000; }
+                .header-bar { display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; flex-wrap:wrap; gap:10px; }
+                button { background: #107c41; color: white; border: none; padding: 8px 15px; border-radius: 4px; cursor: pointer; font-weight:bold; }
+                .save-btn { background: #2980b9; padding: 10px 20px; font-size: 15px; }
+                @media print { button, .no-print { display: none; } }
+            </style>
+            </head><body>
+                <div class="header-bar">
+                    <div>
+                        <h2>AMANUEL LIGHT AND LIFE SCHOOL</h2>
+                        <h3>📋 Daily Attendance Sheet (Monday - Friday) - Class: ${sec}</h3>
+                    </div>
+                    <div class="no-print">
+                        <form method="GET" action="/attendance-sheet/${encodeURIComponent(sec)}" style="display:inline-block; margin-right:10px;">
+                            <label><b>Select Date:</b></label>
+                            <input type="date" name="date" value="${selectedDate}" onchange="this.form.submit()" style="padding:5px;">
+                        </form>
+                        <button onclick="window.print()">🖨️ Print Sheet</button> <button onclick="window.close()">❌ Close</button>
+                    </div>
                 </div>
-                <div><button onclick="window.print()">🖨️ Print Sheet</button> <button onclick="window.close()">❌ Close</button></div>
-            </div>
-            <table class="sheet-table">
-                <tr>
-                    <th>No.</th>
-                    <th>Student ID</th>
-                    <th>Student Full Name</th>
-                    <th>Gender</th>
-                    <th>Monday</th>
-                    <th>Tuesday</th>
-                    <th>Wednesday</th>
-                    <th>Thursday</th>
-                    <th>Friday (Director Report)</th>
-                </tr>
-                ${rowsHtml}
-            </table>
-            <br><br>
-            <div style="display:flex; justify-content:space-between; font-weight:bold;">
-                <p>Teacher's Signature: ______________________</p>
-                <p>Director's Signature (Friday Approval): ______________________</p>
-            </div>
-        </body></html>`);
+
+                <form action="/save-attendance" method="POST">
+                    <input type="hidden" name="class_level" value="${sec}">
+                    <input type="hidden" name="date" value="${selectedDate}">
+                    <table class="sheet-table">
+                        <tr>
+                            <th>No.</th>
+                            <th>Student ID</th>
+                            <th>Student Full Name</th>
+                            <th>Gender</th>
+                            <th>Daily Status (✅ Present / ❌ Absent)</th>
+                        </tr>
+                        ${rowsHtml}
+                    </table>
+                    <br class="no-print">
+                    <div class="no-print" style="text-align:center;">
+                        <button type="submit" class="save-btn">💾 Save Attendance</button>
+                    </div>
+                </form>
+
+                <br><br>
+                <div style="display:flex; justify-content:space-between; font-weight:bold;">
+                    <p>Teacher's Signature: ______________________</p>
+                    <p>Director's Signature (Friday Submit): ______________________</p>
+                </div>
+            </body></html>`);
+        });
+    });
+});
+
+// SAVE ATTENDANCE POST ROUTE
+app.post('/save-attendance', (req, res) => {
+    if (!req.session.isAdmin && !req.session.teacherId) return res.redirect('/');
+    let { class_level, date } = req.body;
+
+    db.all(`SELECT * FROM students WHERE class_level = ?`, [class_level], (err, students) => {
+        if(err) return res.redirect('/teacher-dashboard');
+
+        // Delete existing records for this date and class before inserting new ones
+        db.run(`DELETE FROM daily_attendance WHERE class_level = ? AND date = ?`, [class_level, date], () => {
+            
+            let stmt = db.prepare(`INSERT INTO daily_attendance (student_id, student_name, class_level, date, status) VALUES (?, ?, ?, ?, ?)`);
+            
+            students.forEach(st => {
+                let status = req.body[`status_${st.student_id}`] || 'Absent';
+                stmt.run(st.student_id, st.name, class_level, date, status);
+            });
+            
+            stmt.finalize(() => {
+                res.send(`<script>alert('Attendance saved successfully!'); window.location.href='/teacher-dashboard';</script>`);
+            });
+        });
     });
 });
 
@@ -621,52 +665,57 @@ app.get('/director-report', (req, res) => {
     if (!req.session.isAdmin) return res.redirect('/');
     db.all(`SELECT * FROM sections ORDER BY name`, [], (err, sections) => {
         db.all(`SELECT * FROM students ORDER BY class_level`, [], (err, students) => {
-            
-            // Months from September to May
-            const months = ["September", "October", "November", "December", "January", "February", "March", "April", "May"];
-            
-            let monthSections = months.map(m => {
-                let sectionContent = sections.map(sec => {
-                    let classStudents = students.filter(s => s.class_level === sec.name);
-                    let studentList = classStudents.map((s, idx) => `<tr><td>${idx+1}</td><td>${s.student_id}</td><td style="text-align:left;">${s.name}</td><td>[  ] Present (✅) &nbsp;&nbsp; [  ] Absent (❌)</td></tr>`).join('');
-                    
-                    return `<div style="margin-bottom:20px;">
-                        <h4 style="background:#34495e; color:white; padding:6px; margin:0;">Class: ${sec.name}</h4>
-                        <table border="1" width="100%" style="border-collapse:collapse; text-align:center; font-size:12px;">
-                            <tr style="background:#f2f2f2;"><th>No</th><th>ID</th><th>Full Name</th><th>Friday Verification (✅ / ❌)</th></tr>
-                            ${studentList || '<tr><td colspan="4">No students</td></tr>'}
-                        </table>
+            db.all(`SELECT * FROM daily_attendance ORDER BY date DESC`, [], (err, attendanceRecords) => {
+                
+                const months = ["September", "October", "November", "December", "January", "February", "March", "April", "May"];
+                
+                let monthSections = months.map(m => {
+                    let sectionContent = sections.map(sec => {
+                        let classStudents = students.filter(s => s.class_level === sec.name);
+                        let studentList = classStudents.map((s, idx) => {
+                            let rec = attendanceRecords.find(r => r.student_id === s.student_id);
+                            let statusBadge = rec ? (rec.status === 'Present' ? '✅ Present' : '❌ Absent') : 'Not Recorded';
+                            return `<tr><td>${idx+1}</td><td>${s.student_id}</td><td style="text-align:left;">${s.name}</td><td><b>${statusBadge}</b></td></tr>`;
+                        }).join('');
+                        
+                        return `<div style="margin-bottom:20px;">
+                            <h4 style="background:#34495e; color:white; padding:6px; margin:0;">Class: ${sec.name}</h4>
+                            <table border="1" width="100%" style="border-collapse:collapse; text-align:center; font-size:12px;">
+                                <tr style="background:#f2f2f2;"><th>No</th><th>ID</th><th>Full Name</th><th>Attendance Status</th></tr>
+                                ${studentList || '<tr><td colspan="4">No students</td></tr>'}
+                            </table>
+                        </div>`;
+                    }).join('');
+
+                    return `<div style="margin-bottom:40px; page-break-after: always;">
+                        <h2 style="background:#2c3e50; color:white; padding:10px; text-align:center;">📅 Academic Period / Month: ${m} (September - May)</h2>
+                        ${sectionContent}
                     </div>`;
                 }).join('');
 
-                return `<div style="margin-bottom:40px; page-break-after: always;">
-                    <h2 style="background:#2c3e50; color:white; padding:10px; text-align:center;">📅 Month: ${m} (Academic Year: September - May)</h2>
-                    ${sectionContent}
-                </div>`;
-            }).join('');
-
-            res.send(`
-            <!DOCTYPE html><html><head><meta charset="UTF-8"><title>Director Academic Year Report (Sept-May)</title>
-            <style>
-                body { font-family: sans-serif; padding: 20px; background: white; }
-                table th, table td { border: 1px solid #ccc; padding: 5px; }
-                .header { text-align: center; margin-bottom: 20px; }
-                button { background: #8e44ad; color: white; border: none; padding: 10px 20px; border-radius: 5px; font-weight: bold; cursor: pointer; }
-                @media print { button { display: none; } }
-            </style>
-            </head><body>
-                <div class="header">
-                    <h2>AMANUEL LIGHT AND LIFE SCHOOL</h2>
-                    <h3>📁 Director Comprehensive Attendance Report (September to May - Weekly Friday Records)</h3>
-                    <button onclick="window.print()">🖨️ Print Full Report for Director</button>
-                </div>
-                ${monthSections}
-                <br><br>
-                <div style="display:flex; justify-content:space-between; font-weight:bold; margin-top:40px;">
-                    <p>Prepared by Registrar / Admin: ___________________</p>
-                    <p>Approved & Signed by Director: ___________________</p>
-                </div>
-            </body></html>`);
+                res.send(`
+                <!DOCTYPE html><html><head><meta charset="UTF-8"><title>Director Academic Year Report (Sept-May)</title>
+                <style>
+                    body { font-family: sans-serif; padding: 20px; background: white; }
+                    table th, table td { border: 1px solid #ccc; padding: 5px; }
+                    .header { text-align: center; margin-bottom: 20px; }
+                    button { background: #8e44ad; color: white; border: none; padding: 10px 20px; border-radius: 5px; font-weight: bold; cursor: pointer; }
+                    @media print { button { display: none; } }
+                </style>
+                </head><body>
+                    <div class="header">
+                        <h2>AMANUEL LIGHT AND LIFE SCHOOL</h2>
+                        <h3>📁 Director Comprehensive Attendance Report (September to May)</h3>
+                        <button onclick="window.print()">🖨️ Print Full Report for Director</button>
+                    </div>
+                    ${monthSections}
+                    <br><br>
+                    <div style="display:flex; justify-content:space-between; font-weight:bold; margin-top:40px;">
+                        <p>Prepared by Registrar / Admin: ___________________</p>
+                        <p>Approved & Signed by Director: ___________________</p>
+                    </div>
+                </body></html>`);
+            });
         });
     });
 });
@@ -912,7 +961,7 @@ app.get('/teacher-dashboard', (req, res) => {
                         <div style="text-align:right;"><a href="/teacher-dashboard?lang=am">አማርኛ</a> | <a href="/teacher-dashboard?lang=en">English</a></div>
                         <h2><img src="/uploads/logo.jpg" onerror="this.style.display='none'" style="height: 40px; border-radius: 50%; vertical-align: middle; margin-right: 10px;">👨‍🏫 Teacher Portal: ${teacher.name} (${teacher.assigned_section})</h2>
                         <div style="margin-bottom:15px;">
-                            <a href="/attendance-sheet/${encodeURIComponent(teacher.assigned_section)}" target="_blank" style="background:#2980b9; color:white; padding:10px; display:inline-block; border-radius:5px; text-decoration:none; margin-right:10px; font-weight:bold;">📋 Daily Attendance (Mon-Fri)</a>
+                            <a href="/attendance-sheet/${encodeURIComponent(teacher.assigned_section)}" target="_blank" style="background:#2980b9; color:white; padding:10px; display:inline-block; border-radius:5px; text-decoration:none; margin-right:10px; font-weight:bold;">📋 Daily Attendance Sheet (✅/❌)</a>
                             <a href="/view-excel/${encodeURIComponent(teacher.assigned_section)}" target="_blank" style="background:#107c41; color:white; padding:10px; display:inline-block; border-radius:5px; text-decoration:none; font-weight:bold;">📊 View Grades in Excel Format</a>
                         </div>
 
