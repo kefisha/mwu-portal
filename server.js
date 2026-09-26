@@ -5,7 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const PDFDocument = require('pdfkit');
 const sqlite3 = require('sqlite3').verbose();
-const bwipjs = require('bwip-js'); // For Barcode/QR Code Generation
+const bwipjs = require('bwip-js'); // For QR Code Generation
 
 process.on('uncaughtException', (err) => { console.error('CRITICAL ERROR:', err); });
 process.on('unhandledRejection', (reason, p) => { console.error('UNHANDLED REJECTION:', reason); });
@@ -17,7 +17,7 @@ if (!fs.existsSync('./uploads')) {
     fs.mkdirSync('./uploads');
 }
 
-const dbFile = './mwu_portal.db';
+const dbFile = './school_portal.db';
 const db = new sqlite3.Database(dbFile, (err) => {
     if (err) console.error('Database opening error: ', err.message);
     else console.log('Connected to SQLite Database.');
@@ -62,16 +62,16 @@ db.serialize(() => {
     db.get("SELECT COUNT(*) as count FROM teachers", (err, row) => {
         if (row && row.count === 0) {
             db.run(`INSERT INTO teachers (id, name, dept, password, phone, assigned_section) VALUES 
-            ('T-101', 'Dr. Teshale Kebede', 'Statistics', '123456', '0911001122', '1st Year - Section A'),
-            ('T-102', 'Abebech Bekele', 'Computer Science', '123456', '0922334455', '1st Year - Section B')`);
+            ('T-101', 'Dr. Teshale Kebede', 'Math', '123456', '0911001122', 'Grade 1 - Section A'),
+            ('T-102', 'Abebech Bekele', 'Science', '123456', '0922334455', 'Grade 1 - Section B')`);
         }
     });
 
     db.get("SELECT COUNT(*) as count FROM sections", (err, row) => {
         if (row && row.count === 0) {
             db.run(`INSERT INTO sections (name, monitor_name, monitor_phone) VALUES 
-            ('1st Year - Section A', 'Kefyalew Kebede', '0912345678'),
-            ('1st Year - Section B', 'Chala Tesfaye', '0987654321')`);
+            ('Grade 1 - Section A', 'Kefyalew Kebede', '0912345678'),
+            ('Grade 1 - Section B', 'Chala Tesfaye', '0987654321')`);
         }
     });
 });
@@ -88,13 +88,13 @@ app.use(express.json({ limit: '10mb' }));
 app.use('/uploads', express.static('uploads'));
 
 app.use(session({
-    secret: 'mwu-full-system-session-fix', resave: false, saveUninitialized: true, cookie: { maxAge: 3600000 }
+    secret: 'school-full-system-session-fix', resave: false, saveUninitialized: true, cookie: { maxAge: 3600000 }
 }));
 
 const ADMIN_USER = "amanuel";
 const ADMIN_PASS = "1234";
 
-function generateStudentID() { return `MWU-${Math.floor(1000 + Math.random() * 9000)}`; }
+function generateStudentID() { return `ALLS-${Math.floor(1000 + Math.random() * 9000)}`; }
 function generateTeacherID() { return `T-${Math.floor(100 + Math.random() * 900)}`; }
 function generate4DigitPIN() { return Math.floor(1000 + Math.random() * 9000).toString(); }
 
@@ -131,21 +131,22 @@ function esc(v) { return v === null || v === undefined ? '' : String(v).replace(
 app.get('/', (req, res) => {
     const lang = req.query.lang === 'en' ? 'en' : 'am';
     const t = lang === 'en' ? {
-        title: "🎓 MWU DIGITAL PORTAL", stud: "Student", teach: "Teacher", admin: "Admin",
+        title: "🎓 AMANUEL LIGHT AND LIFE SCHOOL", stud: "Student", teach: "Teacher", admin: "Admin",
         id: "ID Number / Username", pass: "Password PIN", btn: "Log In", reg: "📝 New Student Registration",
         forgot: "Forgot your password?", forgotBtn: "🔑 Reset My Password"
     } : {
-        title: "🎓 የመዳ ወላቡ ዩኒቨርሲቲ ፖርታል", stud: "ተማሪ (Student)", teach: "መምህር (Teacher)", admin: "አድሚን (Admin)",
+        title: "🎓 አማኑኤል ብርሃንና ሕይወት ትምህርት ቤት", stud: "ተማሪ (Student)", teach: "መምህር (Teacher)", admin: "አድሚን (Admin)",
         id: "መታወቂያ ቁጥር (ID)", pass: "የሚስጥር ቁጥር (Password)", btn: "ግባ (Log In)", reg: "📝 አዲስ ተማሪ ምዝገባ",
         forgot: "የይለፍ ቃልዎን ረሱ?", forgotBtn: "🔑 የይለፍ ቃል ዳግም አስጀምር"
     };
 
     res.send(`
-    <!DOCTYPE html><html lang="${lang}"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>MWU Portal</title>
+    <!DOCTYPE html><html lang="${lang}"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Amanuel Light and Life School</title>
     <style>body{font-family:sans-serif; background:#f4f7f6; padding:20px;} .box{max-width:400px; margin:auto; background:white; padding:30px; border-radius:10px; box-shadow:0 4px 10px rgba(0,0,0,0.1); text-align:center;} input,select,button{width:100%; padding:12px; margin-bottom:15px; border-radius:5px; border:1px solid #ccc; font-size:16px;} button{background:#1f4e79; color:white; font-weight:bold; cursor:pointer;} .reg-btn{display:block; background:#27ae60; color:white; padding:12px; text-decoration:none; border-radius:5px; font-weight:bold;}</style>
 </head><body>
         <div class="box">
             <div style="text-align:right;"><a href="/?lang=am">አማርኛ</a> | <a href="/?lang=en">English</a></div>
+            <img src="/uploads/logo.jpg" onerror="this.style.display='none'" style="width: 100px; height: 100px; display: block; margin: 0 auto 15px; border-radius: 50%;">
             <h2>${t.title}</h2>
             <form action="/login?lang=${lang}" method="POST">
                 <select name="role"><option value="student">${t.stud}</option><option value="teacher">${t.teach}</option><option value="admin">${t.admin}</option></select>
@@ -174,6 +175,7 @@ app.get('/forgot-password', (req, res) => {
     <style>body{font-family:sans-serif; background:#f4f7f6; padding:20px;} .box{max-width:400px; margin:auto; background:white; padding:30px; border-radius:10px; box-shadow:0 4px 10px rgba(0,0,0,0.1); text-align:center;} input,button{width:100%; padding:12px; margin-bottom:15px; border-radius:5px; border:1px solid #ccc; font-size:16px;} button{background:#8e44ad; color:white; font-weight:bold; cursor:pointer; border:none;}</style>
     </head><body>
         <div class="box">
+            <img src="/uploads/logo.jpg" onerror="this.style.display='none'" style="width: 80px; height: 80px; display: block; margin: 0 auto 10px; border-radius: 50%;">
             <h2>${t.title}</h2>
             <p style="color:#666; font-size:14px;">${t.desc}</p>
             <form action="/api/forgot-password?lang=${lang}" method="POST">
@@ -231,14 +233,19 @@ app.get('/student-register', (req, res) => {
     const t = lang === 'en' ? {
         title: "📝 Student Registration Form", name: "Full Name:", fat: "Father's Name:", mot: "Mother's Name:",
         gen: "Gender:", m: "Male", f: "Female", age: "Age:", ph: "Phone:", eph: "Emergency:", reg: "Region:",
-        zon: "Zone:", wor: "Woreda:", keb: "Kebele:", dep: "Department:", yr: "Year Level:",
+        zon: "Zone:", wor: "Woreda:", keb: "Kebele:", dep: "Department:", yr: "Grade Level:",
         pic: "Passport Photo:", pay: "Payment Type:", t1: "Transaction ID", t2: "Upload Slip", btn: "Submit", back: "Back"
     } : {
         title: "📝 የተማሪዎች ምዝገባ ፎርም", name: "ሙሉ ስም:", fat: "የአባት ስም:", mot: "የእናት ስም:",
         gen: "ጾታ:", m: "ወንድ", f: "ሴት", age: "ዕድሜ:", ph: "ስልክ:", eph: "የአደጋ ጊዜ ተጠሪ:", reg: "ክልል:",
-        zon: "ዞን:", wor: "ወረዳ:", keb: "ቀበሌ:", dep: "ዲፓርትመንት:", yr: "የአካዳሚክ ዓመት:",
+        zon: "ዞን:", wor: "ወረዳ:", keb: "ቀበሌ:", dep: "ዲፓርትመንት:", yr: "የክፍል ደረጃ (Grade):",
         pic: "ጉርድ ፎቶ:", pay: "የክፍያ ማረጋገጫ:", t1: "የትራንዛክሽን ቁጥር", t2: "የደረሰኝ ፎቶ ያያይዙ", btn: "ምዝገባ ላክ", back: "ተመለስ"
     };
+
+    let gradeOptions = '';
+    for(let i=1; i<=12; i++) {
+        gradeOptions += `<option value="Grade ${i}">Grade ${i}</option>`;
+    }
 
     res.send(`
     <!DOCTYPE html><html lang="${lang}"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Registration</title>
@@ -246,6 +253,7 @@ app.get('/student-register', (req, res) => {
     </head><body>
         <div class="box">
             <div style="text-align:right;"><a href="/student-register?lang=am">አማርኛ</a> | <a href="/student-register?lang=en">English</a></div>
+            <img src="/uploads/logo.jpg" onerror="this.style.display='none'" style="width: 80px; height: 80px; display: block; margin: 0 auto 10px; border-radius: 50%;">
             <h2>${t.title}</h2>
             <form action="/api/register?lang=${lang}" method="POST" enctype="multipart/form-data">
                 <label>${t.name}</label><input type="text" name="name" required>
@@ -255,7 +263,7 @@ app.get('/student-register', (req, res) => {
                 <div class="row"><div class="col"><label>${t.reg}</label><input type="text" name="region" required></div><div class="col"><label>${t.zon}</label><input type="text" name="zone" required></div></div>
                 <div class="row"><div class="col"><label>${t.wor}</label><input type="text" name="woreda" required></div><div class="col"><label>${t.keb}</label><input type="text" name="kebele" required></div></div>
                 <label>${t.dep}</label><input type="text" name="department" required>
-                <label>${t.yr}</label><select name="year_level"><option value="1st Year">1st Year</option><option value="2nd Year">2nd Year</option></select>
+                <label>${t.yr}</label><select name="year_level">${gradeOptions}</select>
                 <label>${t.pic}</label><input type="file" name="student_photo" accept="image/*" required>
                 <label>${t.pay}</label><select name="payment_type" id="payType" onchange="document.getElementById('slipBox').style.display = this.value=='slip_file'?'block':'none'; document.getElementById('txnBox').style.display = this.value=='txn_id'?'block':'none';">
                     <option value="txn_id">${t.t1}</option><option value="slip_file">${t.t2}</option>
@@ -309,7 +317,12 @@ app.get('/download-pending-slip/:id', (req, res) => {
         res.setHeader('Content-Disposition', `attachment; filename=Registration-${st.student_id}.pdf`);
         doc.pipe(res);
 
-        doc.fontSize(20).fillColor('#1f4e79').text('MADDA WALABU UNIVERSITY', { align: 'center' });
+        let schoolLogo = path.join(__dirname, 'uploads', 'logo.jpg');
+        if (fs.existsSync(schoolLogo)) {
+            doc.image(schoolLogo, 40, 20, { width: 40, height: 40 });
+        }
+
+        doc.fontSize(18).fillColor('#1f4e79').text('AMANUEL LIGHT AND LIFE SCHOOL', { align: 'center' });
         doc.fontSize(13).fillColor('#333').text('Student Registration Summary', { align: 'center' }).moveDown();
         doc.moveTo(40, doc.y).lineTo(555, doc.y).strokeColor('#ccc').stroke().moveDown();
 
@@ -331,12 +344,12 @@ app.get('/download-pending-slip/:id', (req, res) => {
         line('Region / Zone', `${st.region || ''} / ${st.zone || ''}`);
         line('Woreda / Kebele', `${st.woreda || ''} / ${st.kebele || ''}`);
         line('Department', st.department);
-        line('Class / Section', st.class_level);
+        line('Grade / Section', st.class_level);
         line('Payment Type', st.payment_type);
         line('Payment Reference', st.bank_slip_val);
         line('Status', st.status || 'Pending Admin Approval');
         doc.moveDown(2);
-        doc.fontSize(9).fillColor('#999').text('This document is auto-generated by the MWU Digital Portal.', { align: 'center' });
+        doc.fontSize(9).fillColor('#999').text('This document is auto-generated by the Amanuel Light and Life School Digital Portal.', { align: 'center' });
         doc.end();
     });
 });
@@ -414,10 +427,10 @@ app.get('/admin', (req, res) => {
                             let secLinks = sections.map(sec => `<a href="/admin/section/${encodeURIComponent(sec.name)}" style="display:inline-block; padding:10px; background:#3498db; color:white; text-decoration:none; border-radius:5px; margin:5px;">📂 ${sec.name}</a>`).join('');
 
                             res.send(`
-                            <!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Admin</title>
+                            <!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Admin - Amanuel School</title>
                             <style>body{font-family:sans-serif; background:#eef2f5; padding:20px;} .card{background:white; padding:20px; border-radius:10px; margin-bottom:20px; overflow-x:auto;} table{width:100%; border-collapse:collapse; min-width:600px;} th,td{border:1px solid #ccc; padding:8px; text-align:center;} th{background:#2c3e50; color:white;} .btn{display:inline-block; padding:10px 14px; background:#16a085; color:white; text-decoration:none; border-radius:5px; font-weight:bold; margin-right:10px;} input,select{padding:6px;}</style></head>
                             <body>
-                                <h2>🔐 Admin Dashboard</h2>
+                                <h2><img src="/uploads/logo.jpg" onerror="this.style.display='none'" style="height: 40px; border-radius: 50%; vertical-align: middle; margin-right: 10px;"> 🔐 Admin Dashboard</h2>
                                 <div class="card"><h3>1. Section Portals</h3>${secLinks || 'No sections'}</div>
 
                                 <div class="card"><h3>2. Pending Registrations</h3><table><tr><th>Photo</th><th>ID</th><th>Name</th><th>Payment</th><th>Action</th></tr>${pRows||'<tr><td colspan="5">None</td></tr>'}</table></div>
@@ -425,7 +438,7 @@ app.get('/admin', (req, res) => {
                                 <div class="card">
                                     <h3>3. Manage Sections / Classes</h3>
                                     <form action="/admin/add-section" method="POST" style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px;">
-                                        <input type="text" name="name" placeholder="Section Name (e.g. 2nd Year - Section A)" required style="flex:2;">
+                                        <input type="text" name="name" placeholder="Section Name (e.g. Grade 1 - Section A)" required style="flex:2;">
                                         <input type="text" name="monitor_name" placeholder="Monitor Name">
                                         <input type="text" name="monitor_phone" placeholder="Monitor Phone">
                                         <button type="submit" style="background:#2980b9; color:white; border:none; padding:8px 14px; border-radius:5px;">➕ Add Section</button>
@@ -529,7 +542,7 @@ app.get('/admin/edit-student/:id', (req, res) => {
                     ${field('Woreda','woreda',s.woreda)}
                     ${field('Kebele','kebele',s.kebele)}
                     ${field('Department','department',s.department)}
-                    <label>Class / Section</label><select name="class_level" style="width:100%; padding:8px; margin-bottom:10px;">${sectionOptions}</select>
+                    <label>Grade / Section</label><select name="class_level" style="width:100%; padding:8px; margin-bottom:10px;">${sectionOptions}</select>
                     ${field('Status','status',s.status)}
                     ${field('Admin Message','admin_message',s.admin_message)}
                     <button type="submit" style="width:100%; padding:12px; background:#27ae60; color:white; border:none; border-radius:5px; font-weight:bold;">💾 Save Changes</button>
@@ -647,7 +660,7 @@ app.get('/admin/export-students', (req, res) => {
         students.forEach(s => rows.push(header.map(col => csvCell(s[col])).join(',')));
         let csv = rows.join('\r\n');
         res.setHeader('Content-Type', 'text/csv');
-        res.setHeader('Content-Disposition', 'attachment; filename=mwu_students.csv');
+        res.setHeader('Content-Disposition', 'attachment; filename=alls_students.csv');
         res.send(csv);
     });
 });
@@ -688,7 +701,7 @@ app.get('/admin/section/:secName', (req, res) => {
                 res.send(`
                 <div style="font-family:sans-serif; padding:20px; background:#f4f7f6;">
                     <a href="/admin" style="background:#7f8c8d; color:white; padding:8px 12px; text-decoration:none; border-radius:5px;">⬅️ Back to Admin</a>
-                    <h2>📂 Section Portal: ${sec}</h2>
+                    <h2><img src="/uploads/logo.jpg" onerror="this.style.display='none'" style="height: 40px; border-radius: 50%; vertical-align: middle; margin-right: 10px;">📂 Section Portal: ${sec}</h2>
                     <div style="background:white; padding:15px; border-radius:8px; margin-bottom:15px; border-left:5px solid #1f4e79;">
                         <p><strong>👨‍🏫 Teacher:</strong> ${teacher ? teacher.name : 'N/A'} (${teacher ? teacher.phone : ''})</p>
                         <p><strong>👑 Monitor:</strong> ${monitor.monitor_name || 'N/A'} (${monitor.monitor_phone || ''})</p>
@@ -723,7 +736,7 @@ app.get('/teacher-dashboard', (req, res) => {
 
                 res.send(`
                 <div style="font-family:sans-serif; padding:20px; max-width:900px; margin:auto;">
-                    <h2>👨‍🏫 Teacher Portal: ${teacher.name} (${teacher.assigned_section})</h2>
+                    <h2><img src="/uploads/logo.jpg" onerror="this.style.display='none'" style="height: 40px; border-radius: 50%; vertical-align: middle; margin-right: 10px;">👨‍🏫 Teacher Portal: ${teacher.name} (${teacher.assigned_section})</h2>
 
                     <div style="background:white; padding:15px; border-radius:8px; margin-bottom:20px;">
                         <h3>📚 My Courses for ${teacher.assigned_section}</h3>
@@ -732,7 +745,7 @@ app.get('/teacher-dashboard', (req, res) => {
                             ${courseRows || '<tr><td colspan="3">No courses added yet</td></tr>'}
                         </table>
                         <form action="/teacher/add-course" method="POST" style="display:flex; gap:8px; flex-wrap:wrap;">
-                            <input type="text" name="code" placeholder="Course Code (e.g. STAT201)" required style="flex:1; padding:8px;">
+                            <input type="text" name="code" placeholder="Course Code (e.g. MATH101)" required style="flex:1; padding:8px;">
                             <input type="text" name="title" placeholder="Course Title" required style="flex:2; padding:8px;">
                             <input type="number" name="credit_hours" placeholder="Cr.Hr" required style="width:80px; padding:8px;">
                             <button type="submit" style="background:#2980b9; color:white; border:none; padding:8px 14px; border-radius:5px;">➕ Add Course</button>
@@ -782,12 +795,12 @@ app.get('/student-dashboard', (req, res) => {
                     let wHistory = wRecs.map(w => `<p>📝 <b>Reason:</b> ${w.reason} | <b>Status:</b> <span style="color:${w.status==='Approved'?'green':(w.status==='Rejected'?'red':'orange')}">${w.status}</span> | <b>Admin Reply:</b> ${w.admin_reply||'Pending'}</p>`).join('');
 
                     res.send(`
-                    <!DOCTYPE html><html lang="${lang}"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Student Dashboard</title>
+                    <!DOCTYPE html><html lang="${lang}"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Student Dashboard - Amanuel School</title>
                     <style>body{font-family:sans-serif; background:#f4f7f6; padding:20px;} .container{max-width:800px; margin:auto;} .card{background:white; padding:20px; border-radius:10px; margin-bottom:20px; box-shadow:0 2px 5px rgba(0,0,0,0.1); overflow-x:auto;} table{width:100%; border-collapse:collapse; margin-top:10px; min-width:400px;} th,td{border:1px solid #ccc; padding:8px; text-align:center;} th{background:#1f4e79; color:white;}</style></head>
                     <body>
                         <div class="container">
                             <div style="text-align:right;"><a href="/student-dashboard?lang=am">አማርኛ</a> | <a href="/student-dashboard?lang=en">English</a></div>
-                            <h2>🎓 Student Dashboard</h2>
+                            <h2><img src="/uploads/logo.jpg" onerror="this.style.display='none'" style="height: 40px; border-radius: 50%; vertical-align: middle; margin-right: 10px;">🎓 Student Dashboard</h2>
                             <div class="card" style="background:#d4edda; color:#155724;">📢 <b>Admin Message:</b> ${student.admin_message}</div>
 
                             <div class="card" style="display:flex; gap:20px; align-items:center;">
@@ -811,7 +824,7 @@ app.get('/student-dashboard', (req, res) => {
                             </div>
 
                             <div class="card" style="background:#fdf2e9;">
-                                <h3>⚠️ Course/University Withdrawal Request</h3>
+                                <h3>⚠️ Course/School Withdrawal Request</h3>
                                 ${wHistory}
                                 <form action="/student/withdraw" method="POST">
                                     <select name="reason" style="width:100%; padding:10px; margin-bottom:10px;"><option>Medical Issue</option><option>Financial Issue</option><option>Other</option></select>
@@ -847,9 +860,18 @@ app.get('/download-id-pdf/:id', (req, res) => {
         doc.rect(4, 4, 392, 252).lineWidth(1.5).strokeColor('#1f4e79').stroke();
 
         doc.rect(4, 4, 392, 46).fill('#1f4e79');
-        doc.circle(30, 27, 16).fill('#ffffff');
-        doc.fontSize(12).fillColor('#1f4e79').text('MWU', 15, 20);
-        doc.fontSize(13).fillColor('#ffffff').text('MADDA WALABU UNIVERSITY', 55, 12, { width: 300 });
+        
+        let schoolLogo = path.join(__dirname, 'uploads', 'logo.jpg');
+        if (fs.existsSync(schoolLogo)) {
+            // Draw custom logo if it exists
+            doc.image(schoolLogo, 10, 8, { width: 38, height: 38 });
+        } else {
+            // Fallback generic ALLS text logo
+            doc.circle(30, 27, 16).fill('#ffffff');
+            doc.fontSize(12).fillColor('#1f4e79').text('ALLS', 14, 20);
+        }
+
+        doc.fontSize(12).fillColor('#ffffff').text('AMANUEL LIGHT AND LIFE SCHOOL', 55, 12, { width: 300 });
         doc.fontSize(8.5).fillColor('#f4d03f').text('OFFICIAL DIGITAL STUDENT ID CARD', 55, 30, { width: 300 });
 
         let photoFile = path.join(__dirname, 'uploads', student.photo || '');
@@ -866,19 +888,16 @@ app.get('/download-id-pdf/:id', (req, res) => {
         doc.fillColor('#27ae60').font('Helvetica-Bold').text(`Status: ${student.status || 'Approved'}`, 115, 146);
 
         doc.rect(4, 170, 392, 20).fill('#eef2f5');
-        doc.fontSize(7.5).fillColor('#555').text('This card is property of Madda Walabu University. If found, please return to the Registrar office.', 12, 176, { width: 376, align: 'center' });
+        doc.fontSize(7.5).fillColor('#555').text('This card is property of Amanuel Light and Life School. If found, please return to the office.', 12, 176, { width: 376, align: 'center' });
 
-        // 1. Prepare the full information string for the QR payload
         let qrData = `Name: ${student.name} ${student.father_name}\nID: ${student.student_id}\nGender: ${student.gender}\nDept: ${student.department}\nClass: ${student.class_level}\nPhone: ${student.phone}`;
 
-        // 2. Generate QR Code instead of a 1D barcode
         bwipjs.toBuffer({ 
             bcid: 'qrcode', 
             text: qrData, 
             scale: 3 
         }, function (err, png) {
             if (!err) {
-                // 3. Render as a square centered at the bottom
                 doc.image(png, 172.5, 195, { width: 55, height: 55 });
             }
             doc.end();
