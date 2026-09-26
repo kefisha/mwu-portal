@@ -24,6 +24,7 @@ const db = new sqlite3.Database(dbFile, (err) => {
 });
 
 db.serialize(() => {
+    // Note: father_name remains in schema for backwards compatibility but is ignored in UI/Queries
     db.run(`CREATE TABLE IF NOT EXISTS students (
         student_id TEXT PRIMARY KEY, password TEXT, name TEXT, father_name TEXT, mother_name TEXT,
         gender TEXT, age INTEGER, phone TEXT, emergency_phone TEXT, region TEXT, zone TEXT,
@@ -57,6 +58,16 @@ db.serialize(() => {
 
     db.run(`CREATE TABLE IF NOT EXISTS sections (
         id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE, monitor_name TEXT, monitor_phone TEXT
+    )`);
+
+    // New Table for Notifications (Admin & Teacher)
+    db.run(`CREATE TABLE IF NOT EXISTS notifications (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, sender_role TEXT, sender_name TEXT, target_audience TEXT, message TEXT, created_at TEXT
+    )`);
+
+    // New Table for Student Absence Requests
+    db.run(`CREATE TABLE IF NOT EXISTS absence_requests (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, student_id TEXT, student_name TEXT, class_level TEXT, reason TEXT, created_at TEXT
     )`);
 
     db.get("SELECT COUNT(*) as count FROM teachers", (err, row) => {
@@ -221,16 +232,16 @@ app.post('/api/forgot-password', (req, res) => {
     });
 });
 
-// STUDENT REGISTRATION
+// STUDENT REGISTRATION (Removed Father's Name)
 app.get('/student-register', (req, res) => {
     const lang = req.query.lang === 'en' ? 'en' : 'am';
     const t = lang === 'en' ? {
-        title: "📝 Student Registration Form", name: "Full Name:", fat: "Father's Name:", mot: "Mother's Name:",
+        title: "📝 Student Registration Form", name: "Full Name:", mot: "Mother's Name:",
         gen: "Gender:", m: "Male", f: "Female", age: "Age:", ph: "Phone:", eph: "Emergency:", reg: "Region:",
         zon: "Zone:", wor: "Woreda:", keb: "Kebele:", yr: "Grade Level:",
         pic: "Passport Photo:", pay: "Payment Type:", t1: "Transaction ID", t2: "Upload Slip", btn: "Submit", back: "Back"
     } : {
-        title: "📝 የተማሪዎች ምዝገባ ፎርም", name: "ሙሉ ስም:", fat: "የአባት ስም:", mot: "የእናት ስም:",
+        title: "📝 የተማሪዎች ምዝገባ ፎርም", name: "ሙሉ ስም:", mot: "የእናት ስም:",
         gen: "ጾታ:", m: "ወንድ", f: "ሴት", age: "ዕድሜ:", ph: "ስልክ:", eph: "የአደጋ ጊዜ ተጠሪ:", reg: "ክልል:",
         zon: "ዞን:", wor: "ወረዳ:", keb: "ቀበሌ:", yr: "የክፍል ደረጃ (Grade):",
         pic: "ጉርድ ፎቶ:", pay: "የክፍያ ማረጋገጫ:", t1: "የትራንዛክሽን ቁጥር", t2: "የደረሰኝ ፎቶ ያያይዙ", btn: "ምዝገባ ላክ", back: "ተመለስ"
@@ -250,8 +261,8 @@ app.get('/student-register', (req, res) => {
             <img src="/uploads/logo.jpg" onerror="this.style.display='none'" style="width: 80px; height: 80px; display: block; margin: 0 auto 10px; border-radius: 50%;">
             <h2>${t.title}</h2>
             <form action="/api/register?lang=${lang}" method="POST" enctype="multipart/form-data">
-                <label>${t.name}</label><input type="text" name="name" required>
-                <div class="row"><div class="col"><label>${t.fat}</label><input type="text" name="father_name" required></div><div class="col"><label>${t.mot}</label><input type="text" name="mother_name" required></div></div>
+                
+                <div class="row"><div class="col"><label>${t.name}</label><input type="text" name="name" required></div><div class="col"><label>${t.mot}</label><input type="text" name="mother_name" required></div></div>
                 <div class="row"><div class="col"><label>${t.gen}</label><select name="gender"><option value="Male">${t.m}</option><option value="Female">${t.f}</option></select></div><div class="col"><label>${t.age}</label><input type="number" name="age" required></div></div>
                 <div class="row"><div class="col"><label>${t.ph}</label><input type="text" name="phone" required></div><div class="col"><label>${t.eph}</label><input type="text" name="emergency_phone" required></div></div>
                 <div class="row"><div class="col"><label>${t.reg}</label><input type="text" name="region" required></div><div class="col"><label>${t.zon}</label><input type="text" name="zone" required></div></div>
@@ -271,7 +282,7 @@ app.get('/student-register', (req, res) => {
 
 app.post('/api/register', upload.fields([{ name: 'student_photo', maxCount: 1 }, { name: 'bank_slip_file', maxCount: 1 }]), (req, res) => {
     const lang = req.query.lang || 'am';
-    let { name, father_name, mother_name, gender, age, phone, emergency_phone, region, zone, woreda, kebele, year_level, payment_type, txn_id } = req.body;
+    let { name, mother_name, gender, age, phone, emergency_phone, region, zone, woreda, kebele, year_level, payment_type, txn_id } = req.body;
     let autoID = generateStudentID(); let autoPIN = generate4DigitPIN();
 
     assignClassSection(year_level, (assignedSection) => {
@@ -279,7 +290,7 @@ app.post('/api/register', upload.fields([{ name: 'student_photo', maxCount: 1 },
         let slipPath = payment_type === 'slip_file' && req.files['bank_slip_file'] ? req.files['bank_slip_file'][0].filename : txn_id;
 
         db.run(`INSERT INTO pending_students (student_id, password, name, father_name, mother_name, gender, age, phone, emergency_phone, region, zone, woreda, kebele, class_level, payment_type, bank_slip_val, photo) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-        [autoID, autoPIN, name, father_name, mother_name, gender, age, phone, emergency_phone, region, zone, woreda, kebele, assignedSection, payment_type, slipPath, photoPath], function() {
+        [autoID, autoPIN, name, '', mother_name, gender, age, phone, emergency_phone, region, zone, woreda, kebele, assignedSection, payment_type, slipPath, photoPath], function() {
             const t = lang === 'en' ? {
                 sent: "Request Sent!", pending: "Your payment has been sent to the Admin for review. You will be able to log in once approved.",
                 cls: "Class", idL: "ID Number", pinL: "Password PIN"
@@ -327,7 +338,8 @@ app.get('/download-pending-slip/:id', (req, res) => {
 
         line('ID Number', st.student_id);
         line('Password PIN', st.password);
-        line('Full Name', `${st.name || ''} ${st.father_name || ''} ${st.mother_name || ''}`);
+        line('Full Name', `${st.name || ''}`);
+        line('Mother Name', `${st.mother_name || ''}`);
         line('Gender', st.gender);
         line('Age', st.age);
         line('Phone', st.phone);
@@ -372,120 +384,132 @@ app.get('/admin', (req, res) => {
     const t = lang === 'en' ? {
         title: "Admin Dashboard", sec: "Manage Sections", pend: "Pending Registrations",
         teach: "Manage Teachers", courses: "Manage Courses", stud: "All Students",
-        withdraw: "Withdrawal Requests", logout: "Logout"
+        noti: "Broadcast Notification to All Students", logout: "Logout"
     } : {
         title: "የአድሚን መቆጣጠሪያ", sec: "ክፍሎችን ማስተዳደሪያ", pend: "አዲስ ተመዝጋቢዎች",
         teach: "መምህራንን ማስተዳደሪያ", courses: "ትምህርቶችን ማስተዳደሪያ", stud: "ሁሉም ተማሪዎች",
-        withdraw: "ከማህደር መሰረዝ ጥያቄዎች", logout: "ውጣ"
+        noti: "ለማንኛውም ተማሪ ማስታወቂያ ላክ (Broadcast)", logout: "ውጣ"
     };
 
     db.all(`SELECT * FROM pending_students`, [], (err, pending) => {
         db.all(`SELECT * FROM students ORDER BY class_level`, [], (err, students) => {
             db.all(`SELECT * FROM teachers`, [], (err, teachers) => {
-                db.all(`SELECT * FROM withdrawals`, [], (err, withdrawals) => {
-                    db.all(`SELECT * FROM sections ORDER BY name`, [], (err, sections) => {
-                        db.all(`SELECT * FROM courses ORDER BY class_level, code`, [], (err, courses) => {
+                db.all(`SELECT * FROM sections ORDER BY name`, [], (err, sections) => {
+                    db.all(`SELECT * FROM courses ORDER BY class_level, code`, [], (err, courses) => {
 
-                            let pRows = pending.map(s => `<tr><td><img src="/uploads/${s.photo}" width="30"></td><td>${s.student_id}</td><td>${s.name}</td><td>${s.payment_type}: ${s.bank_slip_val}</td><td><a href="/admin/approve/${s.id}?lang=${lang}" style="color:green; font-weight:bold;">✅ Approve</a></td></tr>`).join('');
+                        let pRows = pending.map(s => `<tr><td><img src="/uploads/${s.photo}" width="30"></td><td>${s.student_id}</td><td>${s.name}</td><td>${s.payment_type}: ${s.bank_slip_val}</td><td><a href="/admin/approve/${s.id}?lang=${lang}" style="color:green; font-weight:bold;">✅ Approve</a></td></tr>`).join('');
 
-                            let sRows = students.map(s => `<tr>
-                                <td>${s.student_id}</td><td>${s.name}</td><td>${s.class_level}</td><td>${s.phone}</td>
-                                <td><span style="color:red; font-weight:bold;">${s.password}</span></td>
-                                <td>${s.status || ''}</td>
-                                <td><a href="/admin/edit-student/${s.student_id}?lang=${lang}" style="color:#2980b9; font-weight:bold;">✏️ Edit</a></td>
-                                <td><form action="/admin/update-pass?lang=${lang}" method="POST" style="display:flex; gap:4px;"><input type="hidden" name="type" value="student"><input type="hidden" name="id" value="${s.student_id}"><input type="text" name="new_pass" placeholder="New PIN" style="width:70px;"><button type="submit">Reset</button></form></td>
-                                <td><a href="/admin/delete-student/${s.student_id}?lang=${lang}" onclick="return confirm('Delete this student permanently?')" style="color:red; font-weight:bold;">🗑️ Delete</a></td>
-                                </tr>`).join('');
+                        let sRows = students.map(s => `<tr>
+                            <td>${s.student_id}</td><td>${s.name}</td><td>${s.class_level}</td><td>${s.phone}</td>
+                            <td><span style="color:red; font-weight:bold;">${s.password}</span></td>
+                            <td>${s.status || ''}</td>
+                            <td><a href="/admin/edit-student/${s.student_id}?lang=${lang}" style="color:#2980b9; font-weight:bold;">✏️ Edit</a></td>
+                            <td><form action="/admin/update-pass?lang=${lang}" method="POST" style="display:flex; gap:4px;"><input type="hidden" name="type" value="student"><input type="hidden" name="id" value="${s.student_id}"><input type="text" name="new_pass" placeholder="New PIN" style="width:70px;"><button type="submit">Reset</button></form></td>
+                            <td><a href="/admin/delete-student/${s.student_id}?lang=${lang}" onclick="return confirm('Delete this student permanently?')" style="color:red; font-weight:bold;">🗑️ Delete</a></td>
+                            </tr>`).join('');
 
-                            let tRows = teachers.map(tc => `<tr>
-                                <td>${tc.id}</td><td>${tc.name}</td><td>${tc.dept}</td><td>${tc.assigned_section}</td><td>${tc.phone}</td>
-                                <td><span style="color:red; font-weight:bold;">${tc.password}</span></td>
-                                <td><a href="/admin/edit-teacher/${tc.id}?lang=${lang}" style="color:#2980b9; font-weight:bold;">✏️ Edit</a></td>
-                                <td><form action="/admin/update-pass?lang=${lang}" method="POST" style="display:flex; gap:4px;"><input type="hidden" name="type" value="teacher"><input type="hidden" name="id" value="${tc.id}"><input type="text" name="new_pass" placeholder="New Pass" style="width:70px;"><button type="submit">Reset</button></form></td>
-                                <td><a href="/admin/delete-teacher/${tc.id}?lang=${lang}" onclick="return confirm('Delete this teacher?')" style="color:red; font-weight:bold;">🗑️ Delete</a></td>
-                                </tr>`).join('');
+                        let tRows = teachers.map(tc => `<tr>
+                            <td>${tc.id}</td><td>${tc.name}</td><td>${tc.dept}</td><td>${tc.assigned_section}</td><td>${tc.phone}</td>
+                            <td><span style="color:red; font-weight:bold;">${tc.password}</span></td>
+                            <td><a href="/admin/edit-teacher/${tc.id}?lang=${lang}" style="color:#2980b9; font-weight:bold;">✏️ Edit</a></td>
+                            <td><form action="/admin/update-pass?lang=${lang}" method="POST" style="display:flex; gap:4px;"><input type="hidden" name="type" value="teacher"><input type="hidden" name="id" value="${tc.id}"><input type="text" name="new_pass" placeholder="New Pass" style="width:70px;"><button type="submit">Reset</button></form></td>
+                            <td><a href="/admin/delete-teacher/${tc.id}?lang=${lang}" onclick="return confirm('Delete this teacher?')" style="color:red; font-weight:bold;">🗑️ Delete</a></td>
+                            </tr>`).join('');
 
-                            let secRows = sections.map(sec => `<tr>
-                                <td>${sec.name}</td>
-                                <td><form action="/admin/edit-section/${sec.id}?lang=${lang}" method="POST" style="display:flex; gap:4px;">
-                                    <input type="text" name="monitor_name" value="${esc(sec.monitor_name)}" placeholder="Monitor Name" style="width:110px;">
-                                    <input type="text" name="monitor_phone" value="${esc(sec.monitor_phone)}" placeholder="Monitor Phone" style="width:110px;">
-                                    <button type="submit">Save</button></form></td>
-                                <td><a href="/admin/delete-section/${sec.id}?lang=${lang}" onclick="return confirm('Delete this section?')" style="color:red; font-weight:bold;">🗑️ Delete</a></td>
-                                <td><a href="/view-excel/${encodeURIComponent(sec.name)}" style="color:#27ae60; font-weight:bold;" target="_blank">📊 Excel View</a></td>
-                                </tr>`).join('');
+                        let secRows = sections.map(sec => `<tr>
+                            <td>${sec.name}</td>
+                            <td><form action="/admin/edit-section/${sec.id}?lang=${lang}" method="POST" style="display:flex; gap:4px;">
+                                <input type="text" name="monitor_name" value="${esc(sec.monitor_name)}" placeholder="Monitor Name" style="width:110px;">
+                                <input type="text" name="monitor_phone" value="${esc(sec.monitor_phone)}" placeholder="Monitor Phone" style="width:110px;">
+                                <button type="submit">Save</button></form></td>
+                            <td><a href="/admin/delete-section/${sec.id}?lang=${lang}" onclick="return confirm('Delete this section?')" style="color:red; font-weight:bold;">🗑️ Delete</a></td>
+                            <td><a href="/view-excel/${encodeURIComponent(sec.name)}" style="color:#27ae60; font-weight:bold;" target="_blank">📊 Excel View</a></td>
+                            </tr>`).join('');
 
-                            let sectionOptions = sections.map(sec => `<option value="${esc(sec.name)}">${sec.name}</option>`).join('');
-                            let teacherOptions = teachers.map(tc => `<option value="${tc.id}">${tc.name}</option>`).join('');
+                        let sectionOptions = sections.map(sec => `<option value="${esc(sec.name)}">${sec.name}</option>`).join('');
+                        let teacherOptions = teachers.map(tc => `<option value="${tc.id}">${tc.name}</option>`).join('');
 
-                            let cRows = courses.map(c => `<tr><td>${c.code}</td><td>${c.title}</td><td>${c.credit_hours}</td><td>${c.class_level}</td><td>${c.teacher_name||'-'}</td>
-                                <td><a href="/admin/delete-course/${c.id}?lang=${lang}" onclick="return confirm('Delete this course?')" style="color:red; font-weight:bold;">🗑️ Delete</a></td></tr>`).join('');
+                        let cRows = courses.map(c => `<tr><td>${c.code}</td><td>${c.title}</td><td>${c.credit_hours}</td><td>${c.class_level}</td><td>${c.teacher_name||'-'}</td>
+                            <td><a href="/admin/delete-course/${c.id}?lang=${lang}" onclick="return confirm('Delete this course?')" style="color:red; font-weight:bold;">🗑️ Delete</a></td></tr>`).join('');
 
-                            res.send(`
-                            <!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Admin - Amanuel School</title>
-                            <style>body{font-family:sans-serif; background:#eef2f5; padding:20px;} .card{background:white; padding:20px; border-radius:10px; margin-bottom:20px; overflow-x:auto;} table{width:100%; border-collapse:collapse; min-width:600px;} th,td{border:1px solid #ccc; padding:8px; text-align:center;} th{background:#2c3e50; color:white;} .btn{display:inline-block; padding:10px 14px; background:#16a085; color:white; text-decoration:none; border-radius:5px; font-weight:bold; margin-right:10px;} input,select{padding:6px;}</style></head>
-                            <body>
-                                <div style="text-align:right;"><a href="/admin?lang=am">አማርኛ</a> | <a href="/admin?lang=en">English</a></div>
-                                <h2><img src="/uploads/logo.jpg" onerror="this.style.display='none'" style="height: 40px; border-radius: 50%; vertical-align: middle; margin-right: 10px;"> 🔐 ${t.title}</h2>
+                        res.send(`
+                        <!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Admin - Amanuel School</title>
+                        <style>body{font-family:sans-serif; background:#eef2f5; padding:20px;} .card{background:white; padding:20px; border-radius:10px; margin-bottom:20px; overflow-x:auto;} table{width:100%; border-collapse:collapse; min-width:600px;} th,td{border:1px solid #ccc; padding:8px; text-align:center;} th{background:#2c3e50; color:white;} .btn{display:inline-block; padding:10px 14px; background:#16a085; color:white; text-decoration:none; border-radius:5px; font-weight:bold; margin-right:10px;} input,select{padding:6px;} textarea{width:100%; padding:10px; border-radius:5px; border:1px solid #ccc; margin-bottom:10px;}</style></head>
+                        <body>
+                            <div style="text-align:right;"><a href="/admin?lang=am">አማርኛ</a> | <a href="/admin?lang=en">English</a></div>
+                            <h2><img src="/uploads/logo.jpg" onerror="this.style.display='none'" style="height: 40px; border-radius: 50%; vertical-align: middle; margin-right: 10px;"> 🔐 ${t.title}</h2>
 
-                                <div class="card"><h3>${t.pend}</h3><table><tr><th>Photo</th><th>ID</th><th>Name</th><th>Payment</th><th>Action</th></tr>${pRows||'<tr><td colspan="5">None</td></tr>'}</table></div>
+                            <div class="card" style="background:#e8f4fd;">
+                                <h3>📢 ${t.noti}</h3>
+                                <form action="/admin/send-notification" method="POST">
+                                    <textarea name="message" rows="3" placeholder="Write your notification here..." required></textarea>
+                                    <button type="submit" style="background:#3498db; color:white; border:none; padding:10px 20px; border-radius:5px; font-weight:bold; cursor:pointer;">Send Notification</button>
+                                </form>
+                            </div>
 
-                                <div class="card">
-                                    <h3>${t.sec}</h3>
-                                    <form action="/admin/add-section?lang=${lang}" method="POST" style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px;">
-                                        <input type="text" name="name" placeholder="Class Name (e.g. Grade 1 - Section A)" required style="flex:2;">
-                                        <input type="text" name="monitor_name" placeholder="Monitor Name">
-                                        <input type="text" name="monitor_phone" placeholder="Monitor Phone">
-                                        <button type="submit" style="background:#2980b9; color:white; border:none; padding:8px 14px; border-radius:5px;">➕ Add Section</button>
-                                    </form>
-                                    <table><tr><th>Section Name</th><th>Monitor Info</th><th>Delete</th><th>Excel Portal</th></tr>${secRows||'<tr><td colspan="4">None</td></tr>'}</table>
-                                </div>
+                            <div class="card"><h3>${t.pend}</h3><table><tr><th>Photo</th><th>ID</th><th>Name</th><th>Payment</th><th>Action</th></tr>${pRows||'<tr><td colspan="5">None</td></tr>'}</table></div>
 
-                                <div class="card">
-                                    <h3>${t.teach}</h3>
-                                    <form action="/admin/add-teacher?lang=${lang}" method="POST" style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px;">
-                                        <input type="text" name="name" placeholder="Full Name" required>
-                                        <input type="text" name="dept" placeholder="Department" required>
-                                        <input type="text" name="phone" placeholder="Phone" required>
-                                        <select name="assigned_section">${sectionOptions}</select>
-                                        <button type="submit" style="background:#2980b9; color:white; border:none; padding:8px 14px; border-radius:5px;">➕ Add Teacher</button>
-                                    </form>
-                                    <table><tr><th>ID</th><th>Name</th><th>Dept</th><th>Section</th><th>Phone</th><th>Password</th><th>Edit</th><th>Reset Password</th><th>Delete</th></tr>${tRows||'<tr><td colspan="9">None</td></tr>'}</table>
-                                </div>
+                            <div class="card">
+                                <h3>${t.sec}</h3>
+                                <form action="/admin/add-section?lang=${lang}" method="POST" style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px;">
+                                    <input type="text" name="name" placeholder="Class Name (e.g. Grade 1 - Section A)" required style="flex:2;">
+                                    <input type="text" name="monitor_name" placeholder="Monitor Name">
+                                    <input type="text" name="monitor_phone" placeholder="Monitor Phone">
+                                    <button type="submit" style="background:#2980b9; color:white; border:none; padding:8px 14px; border-radius:5px;">➕ Add Section</button>
+                                </form>
+                                <table><tr><th>Section Name</th><th>Monitor Info</th><th>Delete</th><th>Excel Portal</th></tr>${secRows||'<tr><td colspan="4">None</td></tr>'}</table>
+                            </div>
 
-                                <div class="card">
-                                    <h3>${t.courses}</h3>
-                                    <form action="/admin/add-course?lang=${lang}" method="POST" style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px;">
-                                        <input type="text" name="code" placeholder="Course Code" required>
-                                        <input type="text" name="title" placeholder="Course Title" required>
-                                        <input type="number" name="credit_hours" placeholder="Cr.Hr" required style="width:80px;">
-                                        <select name="class_level">${sectionOptions}</select>
-                                        <select name="teacher_id"><option value="">-- No Teacher --</option>${teacherOptions}</select>
-                                        <button type="submit" style="background:#2980b9; color:white; border:none; padding:8px 14px; border-radius:5px;">➕ Add Course</button>
-                                    </form>
-                                    <table><tr><th>Code</th><th>Title</th><th>Cr.Hr</th><th>Section</th><th>Teacher</th><th>Delete</th></tr>${cRows||'<tr><td colspan="6">None</td></tr>'}</table>
-                                </div>
+                            <div class="card">
+                                <h3>${t.teach}</h3>
+                                <form action="/admin/add-teacher?lang=${lang}" method="POST" style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px;">
+                                    <input type="text" name="name" placeholder="Full Name" required>
+                                    <input type="text" name="dept" placeholder="Department" required>
+                                    <input type="text" name="phone" placeholder="Phone" required>
+                                    <select name="assigned_section">${sectionOptions}</select>
+                                    <button type="submit" style="background:#2980b9; color:white; border:none; padding:8px 14px; border-radius:5px;">➕ Add Teacher</button>
+                                </form>
+                                <table><tr><th>ID</th><th>Name</th><th>Dept</th><th>Section</th><th>Phone</th><th>Password</th><th>Edit</th><th>Reset Password</th><th>Delete</th></tr>${tRows||'<tr><td colspan="9">None</td></tr>'}</table>
+                            </div>
 
-                                <div class="card">
-                                    <h3>${t.stud}</h3>
-                                    <p><a class="btn" href="/admin/export-students">📊 Export All Students to Excel (CSV)</a></p>
-                                    <form action="/admin/import-students?lang=${lang}" method="POST" enctype="multipart/form-data" style="margin-bottom:15px;">
-                                        <label style="font-weight:bold;">➕ Add Students from Excel/CSV file:</label><br>
-                                        <input type="file" name="csv_file" accept=".csv" required style="margin:8px 0;">
-                                        <button type="submit" style="padding:8px 14px; background:#2980b9; color:white; border:none; border-radius:5px;">Upload & Add</button>
-                                        <p style="font-size:12px; color:#888;">Columns (in order, no header): name, father_name, mother_name, gender, age, phone, emergency_phone, region, zone, woreda, kebele, class_level</p>
-                                    </form>
-                                    <table><tr><th>ID</th><th>Name</th><th>Class</th><th>Phone</th><th>Password</th><th>Status</th><th>Edit</th><th>Reset Password</th><th>Delete</th></tr>${sRows||'<tr><td colspan="9">None</td></tr>'}</table>
-                                </div>
+                            <div class="card">
+                                <h3>${t.courses}</h3>
+                                <form action="/admin/add-course?lang=${lang}" method="POST" style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px;">
+                                    <input type="text" name="code" placeholder="Course Code" required>
+                                    <input type="text" name="title" placeholder="Course Title" required>
+                                    <input type="number" name="credit_hours" placeholder="Cr.Hr" required style="width:80px;">
+                                    <select name="class_level">${sectionOptions}</select>
+                                    <select name="teacher_id"><option value="">-- No Teacher --</option>${teacherOptions}</select>
+                                    <button type="submit" style="background:#2980b9; color:white; border:none; padding:8px 14px; border-radius:5px;">➕ Add Course</button>
+                                </form>
+                                <table><tr><th>Code</th><th>Title</th><th>Cr.Hr</th><th>Section</th><th>Teacher</th><th>Delete</th></tr>${cRows||'<tr><td colspan="6">None</td></tr>'}</table>
+                            </div>
 
-                                <br><a href="/logout" style="color:red; font-weight:bold; font-size:18px;">🔒 ${t.logout}</a>
-                            </body></html>`);
-                        });
+                            <div class="card">
+                                <h3>${t.stud}</h3>
+                                <p><a class="btn" href="/admin/export-students">📊 Export All Students to Excel (CSV)</a></p>
+                                <form action="/admin/import-students?lang=${lang}" method="POST" enctype="multipart/form-data" style="margin-bottom:15px;">
+                                    <label style="font-weight:bold;">➕ Add Students from Excel/CSV file:</label><br>
+                                    <input type="file" name="csv_file" accept=".csv" required style="margin:8px 0;">
+                                    <button type="submit" style="padding:8px 14px; background:#2980b9; color:white; border:none; border-radius:5px;">Upload & Add</button>
+                                    <p style="font-size:12px; color:#888;">Columns (in order, no header): name, mother_name, gender, age, phone, emergency_phone, region, zone, woreda, kebele, class_level</p>
+                                </form>
+                                <table><tr><th>ID</th><th>Name</th><th>Class</th><th>Phone</th><th>Password</th><th>Status</th><th>Edit</th><th>Reset Password</th><th>Delete</th></tr>${sRows||'<tr><td colspan="9">None</td></tr>'}</table>
+                            </div>
+
+                            <br><a href="/logout" style="color:red; font-weight:bold; font-size:18px;">🔒 ${t.logout}</a>
+                        </body></html>`);
                     });
                 });
             });
         });
     });
+});
+
+app.post('/admin/send-notification', (req, res) => {
+    if (!req.session.isAdmin) return res.redirect('/');
+    db.run(`INSERT INTO notifications (sender_role, sender_name, target_audience, message, created_at) VALUES (?,?,?,?,?)`,
+        ['Admin', 'School Admin', 'ALL', req.body.message, new Date().toLocaleString()], () => res.redirect('/admin'));
 });
 
 // EXCEL-LIKE VIEW ROUTE FOR ADMIN & TEACHERS
@@ -497,7 +521,7 @@ app.get('/view-excel/:secName', (req, res) => {
             <tr>
                 <td>${index + 1}</td>
                 <td>${s.student_id}</td>
-                <td style="text-align:left;">${s.name} ${s.father_name}</td>
+                <td style="text-align:left;">${s.name}</td>
                 <td>${s.gender}</td>
                 <td>${s.age}</td>
                 <td>${s.phone}</td>
@@ -529,12 +553,11 @@ app.get('/view-excel/:secName', (req, res) => {
     });
 });
 
-
 app.get('/admin/approve/:id', (req, res) => {
     if (!req.session.isAdmin) return res.redirect('/');
     db.get(`SELECT * FROM pending_students WHERE id = ?`, [req.params.id], (err, st) => {
         db.run(`INSERT INTO students (student_id, password, name, father_name, mother_name, gender, age, phone, emergency_phone, region, zone, woreda, kebele, class_level, payment_type, bank_slip_val, photo, status, admin_message) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-        [st.student_id, st.password, st.name, st.father_name, st.mother_name, st.gender, st.age, st.phone, st.emergency_phone, st.region, st.zone, st.woreda, st.kebele, st.class_level, st.payment_type, st.bank_slip_val, st.photo, 'Approved', '🎉 Your registration is approved! Download your Digital ID.'], () => {
+        [st.student_id, st.password, st.name, '', st.mother_name, st.gender, st.age, st.phone, st.emergency_phone, st.region, st.zone, st.woreda, st.kebele, st.class_level, st.payment_type, st.bank_slip_val, st.photo, 'Approved', '🎉 Your registration is approved! Download your Digital ID.'], () => {
             db.run(`DELETE FROM pending_students WHERE id = ?`, [req.params.id], () => res.redirect('/admin'));
         });
     });
@@ -548,7 +571,6 @@ app.post('/admin/update-pass', (req, res) => {
     db.run(`UPDATE ${table} SET password = ? WHERE ${idCol} = ?`, [new_pass, id], () => res.redirect('/admin'));
 });
 
-// ---------- Student: full view/edit (INCLUDING PASSWORD) + delete ----------
 app.get('/admin/edit-student/:id', (req, res) => {
     if (!req.session.isAdmin) return res.redirect('/');
     db.get(`SELECT * FROM students WHERE student_id = ?`, [req.params.id], (err, s) => {
@@ -562,7 +584,6 @@ app.get('/admin/edit-student/:id', (req, res) => {
                 <form action="/admin/edit-student/${s.student_id}" method="POST">
                     ${field('Password (PIN)','password',s.password)}
                     ${field('Full Name','name',s.name)}
-                    ${field("Father's Name",'father_name',s.father_name)}
                     ${field("Mother's Name",'mother_name',s.mother_name)}
                     <label>Gender</label><select name="gender" style="width:100%; padding:8px; margin-bottom:10px;"><option ${s.gender==='Male'?'selected':''}>Male</option><option ${s.gender==='Female'?'selected':''}>Female</option></select>
                     ${field('Age','age',s.age,'number')}
@@ -584,9 +605,9 @@ app.get('/admin/edit-student/:id', (req, res) => {
 
 app.post('/admin/edit-student/:id', (req, res) => {
     if (!req.session.isAdmin) return res.redirect('/');
-    let { name, father_name, mother_name, gender, age, phone, emergency_phone, region, zone, woreda, kebele, class_level, status, admin_message, password } = req.body;
-    db.run(`UPDATE students SET name=?, father_name=?, mother_name=?, gender=?, age=?, phone=?, emergency_phone=?, region=?, zone=?, woreda=?, kebele=?, class_level=?, status=?, admin_message=?, password=? WHERE student_id=?`,
-    [name, father_name, mother_name, gender, age, phone, emergency_phone, region, zone, woreda, kebele, class_level, status, admin_message, password, req.params.id], () => res.redirect('/admin'));
+    let { name, mother_name, gender, age, phone, emergency_phone, region, zone, woreda, kebele, class_level, status, admin_message, password } = req.body;
+    db.run(`UPDATE students SET name=?, father_name='', mother_name=?, gender=?, age=?, phone=?, emergency_phone=?, region=?, zone=?, woreda=?, kebele=?, class_level=?, status=?, admin_message=?, password=? WHERE student_id=?`,
+    [name, mother_name, gender, age, phone, emergency_phone, region, zone, woreda, kebele, class_level, status, admin_message, password, req.params.id], () => res.redirect('/admin'));
 });
 
 app.get('/admin/delete-student/:id', (req, res) => {
@@ -637,7 +658,6 @@ app.get('/admin/delete-teacher/:id', (req, res) => {
     db.run(`DELETE FROM teachers WHERE id = ?`, [req.params.id], () => res.redirect('/admin'));
 });
 
-// ---------- Sections / Courses ----------
 app.post('/admin/add-section', (req, res) => {
     if (!req.session.isAdmin) return res.redirect('/');
     db.run(`INSERT OR IGNORE INTO sections (name, monitor_name, monitor_phone) VALUES (?,?,?)`,
@@ -668,7 +688,7 @@ app.get('/admin/delete-course/:id', (req, res) => {
 app.get('/admin/export-students', (req, res) => {
     if (!req.session.isAdmin) return res.redirect('/');
     db.all(`SELECT * FROM students ORDER BY class_level, name`, [], (err, students) => {
-        let header = ['student_id','name','father_name','mother_name','gender','age','phone','emergency_phone','region','zone','woreda','kebele','class_level','payment_type','status'];
+        let header = ['student_id','name','mother_name','gender','age','phone','emergency_phone','region','zone','woreda','kebele','class_level','payment_type','status'];
         let rows = [header.join(',')];
         students.forEach(s => rows.push(header.map(col => csvCell(s[col])).join(',')));
         res.setHeader('Content-Type', 'text/csv');
@@ -686,13 +706,13 @@ app.post('/admin/import-students', csvUpload.single('csv_file'), (req, res) => {
     let processRow = (i) => {
         if (i >= lines.length) return res.redirect('/admin');
         let cols = lines[i].split(',').map(c => c.trim());
-        let [name, father_name, mother_name, gender, age, phone, emergency_phone, region, zone, woreda, kebele, class_level] = cols;
+        let [name, mother_name, gender, age, phone, emergency_phone, region, zone, woreda, kebele, class_level] = cols;
         if (!name) return processRow(i + 1);
 
         let autoID = generateStudentID(); let autoPIN = generate4DigitPIN();
         ensureSectionExists(class_level || 'Unassigned');
         db.run(`INSERT INTO students (student_id, password, name, father_name, mother_name, gender, age, phone, emergency_phone, region, zone, woreda, kebele, class_level, payment_type, bank_slip_val, photo, status, admin_message) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-        [autoID, autoPIN, name, father_name || '', mother_name || '', gender || '', age || null, phone || '', emergency_phone || '', region || '', zone || '', woreda || '', kebele || '', class_level || 'Unassigned', 'admin_added', '-', '', 'Approved', 'Added directly by Admin.'],
+        [autoID, autoPIN, name, '', mother_name || '', gender || '', age || null, phone || '', emergency_phone || '', region || '', zone || '', woreda || '', kebele || '', class_level || 'Unassigned', 'admin_added', '-', '', 'Approved', 'Added directly by Admin.'],
         () => processRow(i + 1));
     };
     processRow(0);
@@ -706,45 +726,77 @@ app.get('/teacher-dashboard', (req, res) => {
     db.get(`SELECT * FROM teachers WHERE id = ?`, [req.session.teacherId], (err, teacher) => {
         db.all(`SELECT s.*, a.quiz, a.mid, a.final, a.total, a.remark FROM students s LEFT JOIN assessments a ON s.student_id = a.student_id WHERE s.class_level = ?`, [teacher.assigned_section], (err, rows) => {
             db.all(`SELECT * FROM courses WHERE class_level = ? ORDER BY id DESC`, [teacher.assigned_section], (err, courses) => {
+                db.all(`SELECT * FROM absence_requests WHERE class_level = ? ORDER BY id DESC`, [teacher.assigned_section], (err, absences) => {
 
-                let studentRows = rows.map(st => `
-                    <tr><td>${st.student_id}</td><td>${st.name}</td>
-                    <form action="/teacher/save-grade?lang=${lang}" method="POST"><input type="hidden" name="student_id" value="${st.student_id}">
-                    <td><input type="number" name="quiz" value="${st.quiz||0}" min="0" max="20" style="width:50px;"></td>
-                    <td><input type="number" name="mid" value="${st.mid||0}" min="0" max="30" style="width:50px;"></td>
-                    <td><input type="number" name="final" value="${st.final||0}" min="0" max="50" style="width:50px;"></td>
-                    <td><strong>${st.total||0}</strong></td><td><button type="submit" style="background:#27ae60;color:white;border:none;padding:5px;">Save</button></td></form></tr>`).join('');
+                    let studentRows = rows.map(st => `
+                        <tr><td>${st.student_id}</td><td>${st.name}</td>
+                        <form action="/teacher/save-grade?lang=${lang}" method="POST"><input type="hidden" name="student_id" value="${st.student_id}">
+                        <td><input type="number" name="quiz" value="${st.quiz||0}" min="0" max="20" style="width:50px;"></td>
+                        <td><input type="number" name="mid" value="${st.mid||0}" min="0" max="30" style="width:50px;"></td>
+                        <td><input type="number" name="final" value="${st.final||0}" min="0" max="50" style="width:50px;"></td>
+                        <td><strong>${st.total||0}</strong></td>
+                        <td><button type="submit" style="background:#27ae60;color:white;border:none;padding:5px 10px; border-radius:3px; cursor:pointer;">💾 Save/Update</button></td></form></tr>`).join('');
 
-                let courseRows = courses.map(c => `<tr><td>${c.code}</td><td>${c.title}</td><td>${c.credit_hours}</td></tr>`).join('');
+                    let courseRows = courses.map(c => `<tr><td>${c.code}</td><td>${c.title}</td><td>${c.credit_hours}</td></tr>`).join('');
+                    
+                    let absRows = absences.map(ab => `<div style="background:#fdf2e9; padding:10px; border-left:4px solid #e67e22; margin-bottom:10px;">
+                        <strong>${ab.student_name} (${ab.student_id})</strong> - <em>${ab.created_at}</em><br>
+                        📝 <strong>Reason/ችግር:</strong> ${ab.reason}
+                    </div>`).join('');
 
-                res.send(`
-                <div style="font-family:sans-serif; padding:20px; max-width:900px; margin:auto;">
-                    <div style="text-align:right;"><a href="/teacher-dashboard?lang=am">አማርኛ</a> | <a href="/teacher-dashboard?lang=en">English</a></div>
-                    <h2><img src="/uploads/logo.jpg" onerror="this.style.display='none'" style="height: 40px; border-radius: 50%; vertical-align: middle; margin-right: 10px;">👨‍🏫 Teacher Portal: ${teacher.name} (${teacher.assigned_section})</h2>
-                    <a href="/view-excel/${encodeURIComponent(teacher.assigned_section)}" target="_blank" style="background:#107c41; color:white; padding:10px; display:inline-block; border-radius:5px; text-decoration:none; margin-bottom:15px; font-weight:bold;">📊 View Students in Excel Format</a>
+                    res.send(`
+                    <div style="font-family:sans-serif; padding:20px; max-width:900px; margin:auto;">
+                        <div style="text-align:right;"><a href="/teacher-dashboard?lang=am">አማርኛ</a> | <a href="/teacher-dashboard?lang=en">English</a></div>
+                        <h2><img src="/uploads/logo.jpg" onerror="this.style.display='none'" style="height: 40px; border-radius: 50%; vertical-align: middle; margin-right: 10px;">👨‍🏫 Teacher Portal: ${teacher.name} (${teacher.assigned_section})</h2>
+                        <a href="/view-excel/${encodeURIComponent(teacher.assigned_section)}" target="_blank" style="background:#107c41; color:white; padding:10px; display:inline-block; border-radius:5px; text-decoration:none; margin-bottom:15px; font-weight:bold;">📊 View Students in Excel Format</a>
 
-                    <div style="background:white; padding:15px; border-radius:8px; margin-bottom:20px;">
-                        <h3>📚 My Courses for ${teacher.assigned_section}</h3>
-                        <table border="1" style="border-collapse:collapse; width:100%; text-align:center; margin-bottom:15px;">
-                            <tr style="background:#1f4e79; color:white;"><th>Code</th><th>Title</th><th>Credit Hours</th></tr>
-                            ${courseRows || '<tr><td colspan="3">No courses added yet</td></tr>'}
-                        </table>
-                        <form action="/teacher/add-course?lang=${lang}" method="POST" style="display:flex; gap:8px; flex-wrap:wrap;">
-                            <input type="text" name="code" placeholder="Course Code" required style="flex:1; padding:8px;">
-                            <input type="text" name="title" placeholder="Course Title" required style="flex:2; padding:8px;">
-                            <input type="number" name="credit_hours" placeholder="Cr.Hr" required style="width:80px; padding:8px;">
-                            <button type="submit" style="background:#2980b9; color:white; border:none; padding:8px 14px; border-radius:5px;">➕ Add Course</button>
-                        </form>
-                    </div>
+                        <div style="display:flex; gap:20px; flex-wrap:wrap;">
+                            <div style="background:#e8f4fd; padding:15px; border-radius:8px; margin-bottom:20px; flex:1; min-width:300px;">
+                                <h3>📢 Send Notification to Class (ለክፍልዎ ማስታወቂያ ላክ)</h3>
+                                <form action="/teacher/send-notification" method="POST">
+                                    <textarea name="message" rows="3" placeholder="Write class notification here..." required style="width:100%; padding:10px; border-radius:5px; border:1px solid #ccc; margin-bottom:10px;"></textarea>
+                                    <button type="submit" style="background:#3498db; color:white; border:none; padding:10px 20px; border-radius:5px; font-weight:bold; cursor:pointer;">Send to My Students</button>
+                                </form>
+                            </div>
+                            
+                            <div style="background:white; padding:15px; border-radius:8px; margin-bottom:20px; flex:1; min-width:300px; max-height: 250px; overflow-y:auto; border:1px solid #ccc;">
+                                <h3>📩 Student Absence Requests (የተማሪዎች ቀሪነት/ፈቃድ ጥያቄዎች)</h3>
+                                ${absRows || '<p style="color:#777;">No absence requests yet.</p>'}
+                            </div>
+                        </div>
 
-                    <div style="overflow-x:auto;">
-                    <table border="1" width="100%" style="border-collapse:collapse; text-align:center; min-width:600px; background:white;">
-                        <tr style="background:#1f4e79; color:white;"><th>ID</th><th>Name</th><th>Quiz(20)</th><th>Mid(30)</th><th>Final(50)</th><th>Total</th><th>Action</th></tr>
-                        ${studentRows||'<tr><td colspan="7">No students</td></tr>'}
-                    </table></div><br><a href="/logout" style="color:red; font-weight:bold;">🔒 Logout</a>
-                </div>`);
+                        <div style="background:white; padding:15px; border-radius:8px; margin-bottom:20px;">
+                            <h3>📚 My Courses for ${teacher.assigned_section}</h3>
+                            <table border="1" style="border-collapse:collapse; width:100%; text-align:center; margin-bottom:15px;">
+                                <tr style="background:#1f4e79; color:white;"><th>Code</th><th>Title</th><th>Credit Hours</th></tr>
+                                ${courseRows || '<tr><td colspan="3">No courses added yet</td></tr>'}
+                            </table>
+                            <form action="/teacher/add-course?lang=${lang}" method="POST" style="display:flex; gap:8px; flex-wrap:wrap;">
+                                <input type="text" name="code" placeholder="Course Code" required style="flex:1; padding:8px;">
+                                <input type="text" name="title" placeholder="Course Title" required style="flex:2; padding:8px;">
+                                <input type="number" name="credit_hours" placeholder="Cr.Hr" required style="width:80px; padding:8px;">
+                                <button type="submit" style="background:#2980b9; color:white; border:none; padding:8px 14px; border-radius:5px;">➕ Add Course</button>
+                            </form>
+                        </div>
+
+                        <div style="overflow-x:auto;">
+                        <h3 style="background:#1f4e79; color:white; padding:10px; margin:0; border-top-left-radius:5px; border-top-right-radius:5px;">📝 Assess & Edit Grades (ውጤት መሙያ እና ማስተካከያ)</h3>
+                        <table border="1" width="100%" style="border-collapse:collapse; text-align:center; min-width:600px; background:white;">
+                            <tr style="background:#eef2f5;"><th>ID</th><th>Name</th><th>Quiz(20)</th><th>Mid(30)</th><th>Final(50)</th><th>Total</th><th>Action</th></tr>
+                            ${studentRows||'<tr><td colspan="7">No students</td></tr>'}
+                        </table></div><br><a href="/logout" style="color:red; font-weight:bold;">🔒 Logout</a>
+                    </div>`);
+                });
             });
         });
+    });
+});
+
+app.post('/teacher/send-notification', (req, res) => {
+    if (!req.session.teacherId) return res.redirect('/');
+    db.get(`SELECT * FROM teachers WHERE id = ?`, [req.session.teacherId], (err, teacher) => {
+        db.run(`INSERT INTO notifications (sender_role, sender_name, target_audience, message, created_at) VALUES (?,?,?,?,?)`,
+            ['Teacher', teacher.name, teacher.assigned_section, req.body.message, new Date().toLocaleString()], () => res.redirect('/teacher-dashboard'));
     });
 });
 
@@ -773,54 +825,83 @@ app.get('/student-dashboard', (req, res) => {
         dash: "🎓 Student Dashboard", msg: "Admin Message",
         cls: "Class", mon: "Monitor", idbtn: "📥 Download Digital ID",
         crs: "Registered Courses", asm: "Assessment & Grades",
-        wReq: "⚠️ School Withdrawal Request"
+        abs: "⚠️ Request Absence (Notify Teacher)", absDesc: "Send this form at least 1 hour before class if you are sick or have a problem.", absBtn: "Send Request"
     } : {
         dash: "🎓 የተማሪ መቆጣጠሪያ", msg: "የአድሚን መልዕክት",
         cls: "ክፍል", mon: "ተቆጣጣሪ", idbtn: "📥 ዲጂታል መታወቂያ ያውርዱ",
         crs: "የተመዘገቡ ትምህርቶች", asm: "ውጤቶች",
-        wReq: "⚠️ ከትምህርት ቤት ማህደር መሰረዝ መጠየቂያ"
+        abs: "⚠️ የቀሪነት/ፈቃድ ጥያቄ (ለመምህር ማሳወቂያ)", absDesc: "ካመመዎት ወይም ችግር ካጋጠመዎት ክፍል ከመጀመሩ ቢያንስ ከ1 ሰዓት በፊት ይህንን ቅጽ ይሙሉ::", absBtn: "ጥያቄውን ላክ"
     };
 
     db.get(`SELECT s.*, a.quiz, a.mid, a.final, a.total, a.remark FROM students s LEFT JOIN assessments a ON s.student_id = a.student_id WHERE s.student_id = ?`, [req.session.studentId], (err, student) => {
         db.all(`SELECT * FROM courses WHERE class_level = ? ORDER BY id`, [student.class_level], (err, courses) => {
             db.get(`SELECT * FROM sections WHERE name = ?`, [student.class_level], (err, section) => {
+                db.all(`SELECT * FROM notifications WHERE target_audience = 'ALL' OR target_audience = ? ORDER BY id DESC`, [student.class_level], (err, notifications) => {
 
-                let monitor = section || { monitor_name: "N/A", monitor_phone: "-" };
-                let courseRows = courses.map(c => `<tr><td>${c.code}</td><td>${c.title}</td><td>${c.credit_hours}</td><td>${c.teacher_name}</td></tr>`).join('');
+                    let monitor = section || { monitor_name: "N/A", monitor_phone: "-" };
+                    let courseRows = courses.map(c => `<tr><td>${c.code}</td><td>${c.title}</td><td>${c.credit_hours}</td><td>${c.teacher_name}</td></tr>`).join('');
+                    
+                    let notiRows = notifications.map(n => `<div style="background:${n.sender_role==='Admin'?'#f8d7da':'#d1ecf1'}; color:${n.sender_role==='Admin'?'#721c24':'#0c5460'}; padding:10px; margin-bottom:10px; border-radius:5px; border-left:5px solid ${n.sender_role==='Admin'?'#f5c6cb':'#bee5eb'};">
+                        <strong style="font-size:12px;">🔔 From: ${n.sender_name} (${n.created_at})</strong><br>
+                        ${n.message}
+                    </div>`).join('');
 
-                res.send(`
-                <!DOCTYPE html><html lang="${lang}"><head><meta charset="UTF-8"><title>Student Dashboard - Amanuel School</title>
-                <style>body{font-family:sans-serif; background:#f4f7f6; padding:20px;} .container{max-width:800px; margin:auto;} .card{background:white; padding:20px; border-radius:10px; margin-bottom:20px; box-shadow:0 2px 5px rgba(0,0,0,0.1); overflow-x:auto;} table{width:100%; border-collapse:collapse; margin-top:10px; min-width:400px;} th,td{border:1px solid #ccc; padding:8px; text-align:center;} th{background:#1f4e79; color:white;}</style></head>
-                <body>
-                    <div class="container">
-                        <div style="text-align:right;"><a href="/student-dashboard?lang=am">አማርኛ</a> | <a href="/student-dashboard?lang=en">English</a></div>
-                        <h2><img src="/uploads/logo.jpg" onerror="this.style.display='none'" style="height: 40px; border-radius: 50%; vertical-align: middle; margin-right: 10px;">${t.dash}</h2>
-                        <div class="card" style="background:#d4edda; color:#155724;">📢 <b>${t.msg}:</b> ${student.admin_message}</div>
+                    res.send(`
+                    <!DOCTYPE html><html lang="${lang}"><head><meta charset="UTF-8"><title>Student Dashboard - Amanuel School</title>
+                    <style>body{font-family:sans-serif; background:#f4f7f6; padding:20px;} .container{max-width:800px; margin:auto;} .card{background:white; padding:20px; border-radius:10px; margin-bottom:20px; box-shadow:0 2px 5px rgba(0,0,0,0.1); overflow-x:auto;} table{width:100%; border-collapse:collapse; margin-top:10px; min-width:400px;} th,td{border:1px solid #ccc; padding:8px; text-align:center;} th{background:#1f4e79; color:white;}</style></head>
+                    <body>
+                        <div class="container">
+                            <div style="text-align:right;"><a href="/student-dashboard?lang=am">አማርኛ</a> | <a href="/student-dashboard?lang=en">English</a></div>
+                            <h2><img src="/uploads/logo.jpg" onerror="this.style.display='none'" style="height: 40px; border-radius: 50%; vertical-align: middle; margin-right: 10px;">${t.dash}</h2>
+                            
+                            ${notifications.length > 0 ? `<div class="card" style="background:#fff3cd; border:1px solid #ffeeba;"><h3>📢 Notifications (ማስታወቂያዎች)</h3>${notiRows}</div>` : ''}
 
-                        <div class="card" style="display:flex; gap:20px; align-items:center;">
-                            <img src="/uploads/${student.photo}" style="width:100px; height:120px; object-fit:cover; border-radius:5px;">
-                            <div>
-                                <h3>${student.name} (${student.student_id})</h3>
-                                <p><b>${t.cls}:</b> ${student.class_level} | <b>${t.mon}:</b> ${monitor.monitor_name} (${monitor.monitor_phone})</p>
-                                <a href="/download-id-pdf/${student.student_id}" style="display:inline-block; padding:10px; background:#27ae60; color:white; text-decoration:none; border-radius:5px; font-weight:bold;">${t.idbtn}</a>
+                            <div class="card" style="background:#d4edda; color:#155724;">📢 <b>${t.msg}:</b> ${student.admin_message}</div>
+
+                            <div class="card" style="display:flex; gap:20px; align-items:center;">
+                                <img src="/uploads/${student.photo}" style="width:100px; height:120px; object-fit:cover; border-radius:5px;">
+                                <div>
+                                    <h3>${student.name} (${student.student_id})</h3>
+                                    <p><b>${t.cls}:</b> ${student.class_level} | <b>${t.mon}:</b> ${monitor.monitor_name} (${monitor.monitor_phone})</p>
+                                    <a href="/download-id-pdf/${student.student_id}" style="display:inline-block; padding:10px; background:#27ae60; color:white; text-decoration:none; border-radius:5px; font-weight:bold;">${t.idbtn}</a>
+                                </div>
                             </div>
-                        </div>
 
-                        <div class="card">
-                            <h3>📚 ${t.crs}</h3>
-                            <table><tr><th>Code</th><th>Title</th><th>Cr.Hr</th><th>Instructor</th></tr>${courseRows||'<tr><td colspan="4">No courses</td></tr>'}</table>
-                        </div>
+                            <div class="card">
+                                <h3>📚 ${t.crs}</h3>
+                                <table><tr><th>Code</th><th>Title</th><th>Cr.Hr</th><th>Instructor</th></tr>${courseRows||'<tr><td colspan="4">No courses</td></tr>'}</table>
+                            </div>
 
-                        <div class="card">
-                            <h3>📊 ${t.asm}</h3>
-                            <table><tr><th>Quiz(20)</th><th>Mid(30)</th><th>Final(50)</th><th>Total(100)</th><th>Remark</th></tr>
-                            <tr><td>${student.quiz||'-'}</td><td>${student.mid||'-'}</td><td>${student.final||'-'}</td><td><strong>${student.total||'-'}</strong></td><td>${student.remark||'N/A'}</td></tr></table>
+                            <div class="card">
+                                <h3>📊 ${t.asm}</h3>
+                                <table><tr><th>Quiz(20)</th><th>Mid(30)</th><th>Final(50)</th><th>Total(100)</th><th>Remark</th></tr>
+                                <tr><td>${student.quiz||'-'}</td><td>${student.mid||'-'}</td><td>${student.final||'-'}</td><td><strong>${student.total||'-'}</strong></td><td>${student.remark||'N/A'}</td></tr></table>
+                            </div>
+
+                            <div class="card" style="background:#fdf2e9; border: 1px solid #e67e22;">
+                                <h3 style="color:#d35400;">${t.abs}</h3>
+                                <p style="font-size:13px; color:#555;">${t.absDesc}</p>
+                                <form action="/student/absence" method="POST">
+                                    <textarea name="reason" placeholder="Write your problem/reason here... (ችግርዎን እዚህ ይጻፉ...)" style="width:100%; padding:10px; margin-bottom:10px; border-radius:5px; border:1px solid #ccc;" rows="3" required></textarea>
+                                    <button type="submit" style="background:#e67e22; color:white; padding:10px; border:none; border-radius:5px; width:100%; cursor:pointer; font-weight:bold;">${t.absBtn}</button>
+                                </form>
+                            </div>
+                            <a href="/logout" style="color:red; font-weight:bold; font-size:18px;">🔒 Logout</a>
                         </div>
-                        <a href="/logout" style="color:red; font-weight:bold; font-size:18px;">🔒 Logout</a>
-                    </div>
-                </body></html>`);
+                    </body></html>`);
+                });
             });
         });
+    });
+});
+
+app.post('/student/absence', (req, res) => {
+    if (!req.session.studentId) return res.redirect('/');
+    db.get('SELECT name, class_level FROM students WHERE student_id=?', [req.session.studentId], (err, st) => {
+        if(st) {
+            db.run(`INSERT INTO absence_requests (student_id, student_name, class_level, reason, created_at) VALUES (?, ?, ?, ?, ?)`, 
+            [req.session.studentId, st.name, st.class_level, req.body.reason, new Date().toLocaleString()], () => res.redirect('/student-dashboard'));
+        }
     });
 });
 
@@ -854,7 +935,7 @@ app.get('/download-id-pdf/:id', (req, res) => {
         if (student.photo && fs.existsSync(photoFile)) doc.image(photoFile, 20, 62, { width: 80, height: 96 });
 
         doc.fontSize(10).fillColor('#000');
-        doc.font('Helvetica-Bold').text(`${student.name} ${student.father_name}`, 115, 62, { width: 260 });
+        doc.font('Helvetica-Bold').text(`${student.name}`, 115, 62, { width: 260 });
         doc.font('Helvetica').fontSize(9);
         doc.text(`ID No: ${student.student_id}`, 115, 80);
         doc.text(`Class: ${student.class_level}`, 115, 96);
@@ -864,7 +945,7 @@ app.get('/download-id-pdf/:id', (req, res) => {
         doc.rect(4, 170, 392, 20).fill('#eef2f5');
         doc.fontSize(7.5).fillColor('#555').text('This card is property of Amanuel Light and Life School. If found, please return to the office.', 12, 176, { width: 376, align: 'center' });
 
-        let qrData = `Name: ${student.name} ${student.father_name}\nID: ${student.student_id}\nGender: ${student.gender}\nClass: ${student.class_level}\nPhone: ${student.phone}`;
+        let qrData = `Name: ${student.name}\nID: ${student.student_id}\nGender: ${student.gender}\nClass: ${student.class_level}\nPhone: ${student.phone}`;
 
         bwipjs.toBuffer({ bcid: 'qrcode', text: qrData, scale: 3 }, function (err, png) {
             if (!err) doc.image(png, 172.5, 195, { width: 55, height: 55 });
