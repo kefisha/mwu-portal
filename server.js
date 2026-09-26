@@ -5,7 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const PDFDocument = require('pdfkit');
 const sqlite3 = require('sqlite3').verbose();
-const bwipjs = require('bwip-js'); // For Barcode Generation
+const bwipjs = require('bwip-js'); // For Barcode/QR Code Generation
 
 process.on('uncaughtException', (err) => { console.error('CRITICAL ERROR:', err); });
 process.on('unhandledRejection', (reason, p) => { console.error('UNHANDLED REJECTION:', reason); });
@@ -376,7 +376,9 @@ app.get('/admin', (req, res) => {
                             let pRows = pending.map(s => `<tr><td><img src="/uploads/${s.photo}" width="30"></td><td>${s.student_id}</td><td>${s.name}</td><td>${s.payment_type}: ${s.bank_slip_val}</td><td><a href="/admin/approve/${s.id}" style="color:green; font-weight:bold;">✅ Approve</a></td></tr>`).join('');
 
                             let sRows = students.map(s => `<tr>
-                                <td>${s.student_id}</td><td>${s.name}</td><td>${s.class_level}</td><td>${s.phone}</td><td>${s.status || ''}</td>
+                                <td>${s.student_id}</td><td>${s.name}</td><td>${s.class_level}</td><td>${s.phone}</td>
+                                <td><span style="color:red; font-weight:bold;">${s.password}</span></td>
+                                <td>${s.status || ''}</td>
                                 <td><a href="/admin/edit-student/${s.student_id}" style="color:#2980b9; font-weight:bold;">✏️ Edit</a></td>
                                 <td><form action="/admin/update-pass" method="POST" style="display:flex; gap:4px;"><input type="hidden" name="type" value="student"><input type="hidden" name="id" value="${s.student_id}"><input type="text" name="new_pass" placeholder="New PIN" style="width:70px;"><button type="submit">Reset</button></form></td>
                                 <td><a href="/admin/delete-student/${s.student_id}" onclick="return confirm('Delete this student permanently?')" style="color:red; font-weight:bold;">🗑️ Delete</a></td>
@@ -384,6 +386,7 @@ app.get('/admin', (req, res) => {
 
                             let tRows = teachers.map(t => `<tr>
                                 <td>${t.id}</td><td>${t.name}</td><td>${t.dept}</td><td>${t.assigned_section}</td><td>${t.phone}</td>
+                                <td><span style="color:red; font-weight:bold;">${t.password}</span></td>
                                 <td><a href="/admin/edit-teacher/${t.id}" style="color:#2980b9; font-weight:bold;">✏️ Edit</a></td>
                                 <td><form action="/admin/update-pass" method="POST" style="display:flex; gap:4px;"><input type="hidden" name="type" value="teacher"><input type="hidden" name="id" value="${t.id}"><input type="text" name="new_pass" placeholder="New Pass" style="width:70px;"><button type="submit">Reset</button></form></td>
                                 <td><a href="/admin/delete-teacher/${t.id}" onclick="return confirm('Delete this teacher?')" style="color:red; font-weight:bold;">🗑️ Delete</a></td>
@@ -439,7 +442,7 @@ app.get('/admin', (req, res) => {
                                         <select name="assigned_section">${sectionOptions}</select>
                                         <button type="submit" style="background:#2980b9; color:white; border:none; padding:8px 14px; border-radius:5px;">➕ Add Teacher</button>
                                     </form>
-                                    <table><tr><th>ID</th><th>Name</th><th>Dept</th><th>Section</th><th>Phone</th><th>Edit</th><th>Reset Password</th><th>Delete</th></tr>${tRows||'<tr><td colspan="8">None</td></tr>'}</table>
+                                    <table><tr><th>ID</th><th>Name</th><th>Dept</th><th>Section</th><th>Phone</th><th>Password</th><th>Edit</th><th>Reset Password</th><th>Delete</th></tr>${tRows||'<tr><td colspan="9">None</td></tr>'}</table>
                                 </div>
 
                                 <div class="card">
@@ -464,7 +467,7 @@ app.get('/admin', (req, res) => {
                                         <button type="submit" style="padding:8px 14px; background:#2980b9; color:white; border:none; border-radius:5px;">Upload & Add</button>
                                         <p style="font-size:12px; color:#888;">Columns (in order, no header row needed): name, father_name, mother_name, gender, age, phone, emergency_phone, region, zone, woreda, kebele, department, class_level</p>
                                     </form>
-                                    <table><tr><th>ID</th><th>Name</th><th>Class</th><th>Phone</th><th>Status</th><th>Edit</th><th>Reset Password</th><th>Delete</th></tr>${sRows||'<tr><td colspan="8">None</td></tr>'}</table>
+                                    <table><tr><th>ID</th><th>Name</th><th>Class</th><th>Phone</th><th>Password</th><th>Status</th><th>Edit</th><th>Reset Password</th><th>Delete</th></tr>${sRows||'<tr><td colspan="9">None</td></tr>'}</table>
                                 </div>
 
                                 <div class="card"><h3>7. Withdrawal Requests</h3><table><tr><th>Student ID</th><th>Reason</th><th>Details</th><th>Status</th><th>Admin Action</th></tr>${wRows||'<tr><td colspan="5">None</td></tr>'}</table></div>
@@ -501,7 +504,7 @@ app.post('/admin/withdraw-reply', (req, res) => {
     db.run(`UPDATE withdrawals SET admin_reply = ?, status = ? WHERE id = ?`, [req.body.reply, req.body.status, req.body.id], () => res.redirect('/admin'));
 });
 
-// ---------- Student: full view/edit (everything except password) + delete ----------
+// ---------- Student: full view/edit (INCLUDING PASSWORD) + delete ----------
 app.get('/admin/edit-student/:id', (req, res) => {
     if (!req.session.isAdmin) return res.redirect('/');
     db.get(`SELECT * FROM students WHERE student_id = ?`, [req.params.id], (err, s) => {
@@ -513,6 +516,7 @@ app.get('/admin/edit-student/:id', (req, res) => {
             <div style="font-family:sans-serif; padding:20px; max-width:600px; margin:auto; background:white; border-radius:10px;">
                 <h2>✏️ Edit Student: ${s.student_id}</h2>
                 <form action="/admin/edit-student/${s.student_id}" method="POST">
+                    ${field('Password (PIN)','password',s.password)}
                     ${field('Full Name','name',s.name)}
                     ${field("Father's Name",'father_name',s.father_name)}
                     ${field("Mother's Name",'mother_name',s.mother_name)}
@@ -528,7 +532,6 @@ app.get('/admin/edit-student/:id', (req, res) => {
                     <label>Class / Section</label><select name="class_level" style="width:100%; padding:8px; margin-bottom:10px;">${sectionOptions}</select>
                     ${field('Status','status',s.status)}
                     ${field('Admin Message','admin_message',s.admin_message)}
-                    <p style="font-size:12px; color:#888;">Note: Password cannot be viewed or edited here — use the Reset Password action on the Admin dashboard.</p>
                     <button type="submit" style="width:100%; padding:12px; background:#27ae60; color:white; border:none; border-radius:5px; font-weight:bold;">💾 Save Changes</button>
                 </form><br><a href="/admin">⬅️ Back to Admin</a>
             </div>`);
@@ -538,9 +541,9 @@ app.get('/admin/edit-student/:id', (req, res) => {
 
 app.post('/admin/edit-student/:id', (req, res) => {
     if (!req.session.isAdmin) return res.redirect('/');
-    let { name, father_name, mother_name, gender, age, phone, emergency_phone, region, zone, woreda, kebele, department, class_level, status, admin_message } = req.body;
-    db.run(`UPDATE students SET name=?, father_name=?, mother_name=?, gender=?, age=?, phone=?, emergency_phone=?, region=?, zone=?, woreda=?, kebele=?, department=?, class_level=?, status=?, admin_message=? WHERE student_id=?`,
-    [name, father_name, mother_name, gender, age, phone, emergency_phone, region, zone, woreda, kebele, department, class_level, status, admin_message, req.params.id], () => res.redirect('/admin'));
+    let { name, father_name, mother_name, gender, age, phone, emergency_phone, region, zone, woreda, kebele, department, class_level, status, admin_message, password } = req.body;
+    db.run(`UPDATE students SET name=?, father_name=?, mother_name=?, gender=?, age=?, phone=?, emergency_phone=?, region=?, zone=?, woreda=?, kebele=?, department=?, class_level=?, status=?, admin_message=?, password=? WHERE student_id=?`,
+    [name, father_name, mother_name, gender, age, phone, emergency_phone, region, zone, woreda, kebele, department, class_level, status, admin_message, password, req.params.id], () => res.redirect('/admin'));
 });
 
 app.get('/admin/delete-student/:id', (req, res) => {
@@ -552,7 +555,7 @@ app.get('/admin/delete-student/:id', (req, res) => {
     });
 });
 
-// ---------- Teachers: add / edit (everything except password) / delete ----------
+// ---------- Teachers: add / edit (INCLUDING PASSWORD) / delete ----------
 app.post('/admin/add-teacher', (req, res) => {
     if (!req.session.isAdmin) return res.redirect('/');
     let { name, dept, phone, assigned_section } = req.body;
@@ -572,11 +575,11 @@ app.get('/admin/edit-teacher/:id', (req, res) => {
             <div style="font-family:sans-serif; padding:20px; max-width:500px; margin:auto; background:white; border-radius:10px;">
                 <h2>✏️ Edit Teacher: ${t.id}</h2>
                 <form action="/admin/edit-teacher/${t.id}" method="POST">
+                    <label>Password</label><input type="text" name="password" value="${esc(t.password)}" style="width:100%; padding:8px; margin-bottom:10px;">
                     <label>Full Name</label><input type="text" name="name" value="${esc(t.name)}" style="width:100%; padding:8px; margin-bottom:10px;">
                     <label>Department</label><input type="text" name="dept" value="${esc(t.dept)}" style="width:100%; padding:8px; margin-bottom:10px;">
                     <label>Phone</label><input type="text" name="phone" value="${esc(t.phone)}" style="width:100%; padding:8px; margin-bottom:10px;">
                     <label>Assigned Section</label><select name="assigned_section" style="width:100%; padding:8px; margin-bottom:10px;">${sectionOptions}</select>
-                    <p style="font-size:12px; color:#888;">Note: Password cannot be viewed or edited here — use Reset Password on the Admin dashboard.</p>
                     <button type="submit" style="width:100%; padding:12px; background:#27ae60; color:white; border:none; border-radius:5px; font-weight:bold;">💾 Save Changes</button>
                 </form><br><a href="/admin">⬅️ Back to Admin</a>
             </div>`);
@@ -586,9 +589,9 @@ app.get('/admin/edit-teacher/:id', (req, res) => {
 
 app.post('/admin/edit-teacher/:id', (req, res) => {
     if (!req.session.isAdmin) return res.redirect('/');
-    let { name, dept, phone, assigned_section } = req.body;
-    db.run(`UPDATE teachers SET name=?, dept=?, phone=?, assigned_section=? WHERE id=?`,
-    [name, dept, phone, assigned_section, req.params.id], () => res.redirect('/admin'));
+    let { name, dept, phone, assigned_section, password } = req.body;
+    db.run(`UPDATE teachers SET name=?, dept=?, phone=?, assigned_section=?, password=? WHERE id=?`,
+    [name, dept, phone, assigned_section, password, req.params.id], () => res.redirect('/admin'));
 });
 
 app.get('/admin/delete-teacher/:id', (req, res) => {
