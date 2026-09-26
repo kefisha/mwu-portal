@@ -159,7 +159,7 @@ app.get('/', (req, res) => {
     </body></html>`);
 });
 
-// ============== FORGOT PASSWORD (self-service reset, ID is never revealed) ==============
+// ============== FORGOT PASSWORD ==============
 app.get('/forgot-password', (req, res) => {
     const lang = req.query.lang === 'en' ? 'en' : 'am';
     const t = lang === 'en' ? {
@@ -792,7 +792,7 @@ app.get('/student-dashboard', (req, res) => {
                                 <div>
                                     <h3>${student.name} (${student.student_id})</h3>
                                     <p><b>Class:</b> ${student.class_level} | <b>Monitor:</b> ${monitor.monitor_name} (${monitor.monitor_phone})</p>
-                                    <a href="/download-id-pdf/${student.student_id}" style="display:inline-block; padding:10px; background:#27ae60; color:white; text-decoration:none; border-radius:5px; font-weight:bold;">📥 Download Digital ID w/ Barcode</a>
+                                    <a href="/download-id-pdf/${student.student_id}" style="display:inline-block; padding:10px; background:#27ae60; color:white; text-decoration:none; border-radius:5px; font-weight:bold;">📥 Download Digital ID w/ QR Code</a>
                                 </div>
                             </div>
 
@@ -830,13 +830,14 @@ app.post('/student/withdraw', (req, res) => {
     db.run(`INSERT INTO withdrawals (student_id, reason, details, status) VALUES (?,?,?,?)`, [req.session.studentId, req.body.reason, req.body.details, 'Pending'], () => res.redirect('/student-dashboard'));
 });
 
-// DIGITAL ID PDF (WITH PHOTO & BARCODE)
+// DIGITAL ID PDF (WITH PHOTO & QR CODE)
 app.get('/download-id-pdf/:id', (req, res) => {
     db.get(`SELECT * FROM students WHERE student_id = ?`, [req.params.id], (err, student) => {
         if (!student) return res.send('Student not found');
 
         const doc = new PDFDocument({ size: [400, 260], margin: 0 });
-        res.setHeader('Content-Type', 'application/pdf'); res.setHeader('Content-Disposition', `attachment; filename=ID-${student.student_id}.pdf`);
+        res.setHeader('Content-Type', 'application/pdf'); 
+        res.setHeader('Content-Disposition', `attachment; filename=ID-${student.student_id}.pdf`);
         doc.pipe(res);
 
         doc.rect(0, 0, 400, 260).fill('#fdfefe');
@@ -864,8 +865,19 @@ app.get('/download-id-pdf/:id', (req, res) => {
         doc.rect(4, 170, 392, 20).fill('#eef2f5');
         doc.fontSize(7.5).fillColor('#555').text('This card is property of Madda Walabu University. If found, please return to the Registrar office.', 12, 176, { width: 376, align: 'center' });
 
-        bwipjs.toBuffer({ bcid: 'code128', text: student.student_id, scale: 3, height: 10, includetext: true, textxalign: 'center' }, function (err, png) {
-            if (!err) doc.image(png, 100, 195, { width: 200 });
+        // 1. Prepare the full information string for the QR payload
+        let qrData = `Name: ${student.name} ${student.father_name}\nID: ${student.student_id}\nGender: ${student.gender}\nDept: ${student.department}\nClass: ${student.class_level}\nPhone: ${student.phone}`;
+
+        // 2. Generate QR Code instead of a 1D barcode
+        bwipjs.toBuffer({ 
+            bcid: 'qrcode', 
+            text: qrData, 
+            scale: 3 
+        }, function (err, png) {
+            if (!err) {
+                // 3. Render as a square centered at the bottom
+                doc.image(png, 172.5, 195, { width: 55, height: 55 });
+            }
             doc.end();
         });
     });
