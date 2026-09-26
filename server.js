@@ -1,10 +1,149 @@
-?", forgotBtn: "🔑 የይለፍ ቃል ዳግም አስጀምር"
+const express = require('express');
+const session = require('express-session');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
+const PDFDocument = require('pdfkit');
+const sqlite3 = require('sqlite3').verbose();
+const bwipjs = require('bwip-js'); // For Barcode Generation
+
+process.on('uncaughtException', (err) => { console.error('CRITICAL ERROR:', err); });
+process.on('unhandledRejection', (reason, p) => { console.error('UNHANDLED REJECTION:', reason); });
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+if (!fs.existsSync('./uploads')) {
+    fs.mkdirSync('./uploads');
+}
+
+const dbFile = './mwu_portal.db';
+const db = new sqlite3.Database(dbFile, (err) => {
+    if (err) console.error('Database opening error: ', err.message);
+    else console.log('Connected to SQLite Database.');
+});
+
+db.serialize(() => {
+    db.run(`CREATE TABLE IF NOT EXISTS students (
+        student_id TEXT PRIMARY KEY, password TEXT, name TEXT, father_name TEXT, mother_name TEXT,
+        gender TEXT, age INTEGER, phone TEXT, emergency_phone TEXT, region TEXT, zone TEXT,
+        woreda TEXT, kebele TEXT, department TEXT, class_level TEXT, payment_type TEXT,
+        bank_slip_val TEXT, photo TEXT, status TEXT, admin_message TEXT
+    )`);
+
+    db.run(`CREATE TABLE IF NOT EXISTS pending_students (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, student_id TEXT, password TEXT, name TEXT, father_name TEXT,
+        mother_name TEXT, gender TEXT, age INTEGER, phone TEXT, emergency_phone TEXT, region TEXT,
+        zone TEXT, woreda TEXT, kebele TEXT, department TEXT, class_level TEXT, payment_type TEXT,
+        bank_slip_val TEXT, photo TEXT
+    )`);
+
+    db.run(`CREATE TABLE IF NOT EXISTS teachers (
+        id TEXT PRIMARY KEY, name TEXT, dept TEXT, password TEXT, phone TEXT, assigned_section TEXT
+    )`);
+
+    db.run(`CREATE TABLE IF NOT EXISTS assessments (
+        student_id TEXT PRIMARY KEY, quiz REAL, mid REAL, final REAL, total REAL, remark TEXT
+    )`);
+
+    db.run(`CREATE TABLE IF NOT EXISTS withdrawals (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, student_id TEXT, reason TEXT, details TEXT, status TEXT, admin_reply TEXT
+    )`);
+
+    db.run(`CREATE TABLE IF NOT EXISTS courses (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT, title TEXT, credit_hours INTEGER,
+        teacher_id TEXT, teacher_name TEXT, class_level TEXT
+    )`);
+
+    db.run(`CREATE TABLE IF NOT EXISTS sections (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE, monitor_name TEXT, monitor_phone TEXT
+    )`);
+
+    db.get("SELECT COUNT(*) as count FROM teachers", (err, row) => {
+        if (row && row.count === 0) {
+            db.run(`INSERT INTO teachers (id, name, dept, password, phone, assigned_section) VALUES 
+            ('T-101', 'Dr. Teshale Kebede', 'Statistics', '123456', '0911001122', '1st Year - Section A'),
+            ('T-102', 'Abebech Bekele', 'Computer Science', '123456', '0922334455', '1st Year - Section B')`);
+        }
+    });
+
+    db.get("SELECT COUNT(*) as count FROM sections", (err, row) => {
+        if (row && row.count === 0) {
+            db.run(`INSERT INTO sections (name, monitor_name, monitor_phone) VALUES 
+            ('1st Year - Section A', 'Kefyalew Kebede', '0912345678'),
+            ('1st Year - Section B', 'Chala Tesfaye', '0987654321')`);
+        }
+    });
+});
+
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => cb(null, 'uploads/'),
+    filename: (req, file, cb) => cb(null, Date.now() + '-' + Math.round(Math.random() * 1E9) + path.extname(file.originalname))
+});
+const upload = multer({ storage: storage, limits: { fileSize: 5 * 1024 * 1024 } });
+const csvUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 2 * 1024 * 1024 } });
+
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(express.json({ limit: '10mb' }));
+app.use('/uploads', express.static('uploads'));
+
+app.use(session({
+    secret: 'mwu-full-system-session-fix', resave: false, saveUninitialized: true, cookie: { maxAge: 3600000 }
+}));
+
+const ADMIN_USER = "amanuel";
+const ADMIN_PASS = "1234";
+
+function generateStudentID() { return `MWU-${Math.floor(1000 + Math.random() * 9000)}`; }
+function generateTeacherID() { return `T-${Math.floor(100 + Math.random() * 900)}`; }
+function generate4DigitPIN() { return Math.floor(1000 + Math.random() * 9000).toString(); }
+
+function ensureSectionExists(secName) {
+    db.run(`INSERT OR IGNORE INTO sections (name, monitor_name, monitor_phone) VALUES (?, '', '')`, [secName]);
+}
+
+function assignClassSection(requestedYearLevel, callback) {
+    const letters = ["A", "B", "C", "D"];
+    let checkNext = (index) => {
+        if (index >= letters.length) return callback(`${requestedYearLevel} - Section Overflow`);
+        let secName = `${requestedYearLevel} - Section ${letters[index]}`;
+        db.get(`SELECT COUNT(*) as c FROM students WHERE class_level = ?`, [secName], (err, r1) => {
+            db.get(`SELECT COUNT(*) as c FROM pending_students WHERE class_level = ?`, [secName], (err, r2) => {
+                let total = (r1 ? r1.c : 0) + (r2 ? r2.c : 0);
+                if (total < 50) { ensureSectionExists(secName); callback(secName); }
+                else checkNext(index + 1);
+            });
+        });
+    };
+    checkNext(0);
+}
+
+function csvCell(v) {
+    if (v === null || v === undefined) return '';
+    let s = String(v).replace(/"/g, '""');
+    if (s.search(/("|,|\n)/g) >= 0) s = `"${s}"`;
+    return s;
+}
+
+function esc(v) { return v === null || v === undefined ? '' : String(v).replace(/"/g, '&quot;'); }
+
+// LANDING PAGE
+app.get('/', (req, res) => {
+    const lang = req.query.lang === 'en' ? 'en' : 'am';
+    const t = lang === 'en' ? {
+        title: "🎓 MWU DIGITAL PORTAL", stud: "Student", teach: "Teacher", admin: "Admin",
+        id: "ID Number / Username", pass: "Password PIN", btn: "Log In", reg: "📝 New Student Registration",
+        forgot: "Forgot your password?", forgotBtn: "🔑 Reset My Password"
+    } : {
+        title: "🎓 የመዳ ወላቡ ዩኒቨርሲቲ ፖርታል", stud: "ተማሪ (Student)", teach: "መምህር (Teacher)", admin: "አድሚን (Admin)",
+        id: "መታወቂያ ቁጥር (ID)", pass: "የሚስጥር ቁጥር (Password)", btn: "ግባ (Log In)", reg: "📝 አዲስ ተማሪ ምዝገባ",
+        forgot: "የይለፍ ቃልዎን ረሱ?", forgotBtn: "🔑 የይለፍ ቃል ዳግም አስጀምር"
     };
 
     res.send(`
     <!DOCTYPE html><html lang="${lang}"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>MWU Portal</title>
     <style>body{font-family:sans-serif; background:#f4f7f6; padding:20px;} .box{max-width:400px; margin:auto; background:white; padding:30px; border-radius:10px; box-shadow:0 4px 10px rgba(0,0,0,0.1); text-align:center;} input,select,button{width:100%; padding:12px; margin-bottom:15px; border-radius:5px; border:1px solid #ccc; font-size:16px;} button{background:#1f4e79; color:white; font-weight:bold; cursor:pointer;} .reg-btn{display:block; background:#27ae60; color:white; padding:12px; text-decoration:none; border-radius:5px; font-weight:bold;}</style>
-    </head><body>
+</head><body>
         <div class="box">
             <div style="text-align:right;"><a href="/?lang=am">አማርኛ</a> | <a href="/?lang=en">English</a></div>
             <h2>${t.title}</h2>
