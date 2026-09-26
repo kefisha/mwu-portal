@@ -59,12 +59,10 @@ db.serialize(() => {
         id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE, monitor_name TEXT, monitor_phone TEXT
     )`);
 
-    // Notifications Table (Admin & Teacher)
     db.run(`CREATE TABLE IF NOT EXISTS notifications (
         id INTEGER PRIMARY KEY AUTOINCREMENT, sender_role TEXT, sender_name TEXT, target_audience TEXT, message TEXT, created_at TEXT
     )`);
 
-    // Student Absence Requests Table
     db.run(`CREATE TABLE IF NOT EXISTS absence_requests (
         id INTEGER PRIMARY KEY AUTOINCREMENT, student_id TEXT, student_name TEXT, class_level TEXT, reason TEXT, created_at TEXT
     )`);
@@ -118,9 +116,7 @@ function assignClassSection(requestedYearLevel, callback) {
         if (index >= letters.length) return callback(`${requestedYearLevel} - Section Overflow`);
         let secName = `${requestedYearLevel} - Section ${letters[index]}`;
         db.get(`SELECT COUNT(*) as c FROM students WHERE class_level = ?`, [secName], (err, r1) => {
-            if (err) console.error(err);
             db.get(`SELECT COUNT(*) as c FROM pending_students WHERE class_level = ?`, [secName], (err, r2) => {
-                if (err) console.error(err);
                 let total = (r1 && r1.c ? r1.c : 0) + (r2 && r2.c ? r2.c : 0);
                 if (total < 50) { ensureSectionExists(secName); callback(secName); }
                 else checkNext(index + 1);
@@ -139,7 +135,7 @@ function csvCell(v) {
 
 function esc(v) { return v === null || v === undefined ? '' : String(v).replace(/"/g, '&quot;'); }
 
-// ================= LANDING PAGE =================
+// LANDING PAGE
 app.get('/', (req, res) => {
     const lang = req.query.lang === 'en' ? 'en' : 'am';
     const t = lang === 'en' ? {
@@ -172,7 +168,7 @@ app.get('/', (req, res) => {
     </body></html>`);
 });
 
-// ================= FORGOT PASSWORD =================
+// FORGOT PASSWORD
 app.get('/forgot-password', (req, res) => {
     const lang = req.query.lang === 'en' ? 'en' : 'am';
     const t = lang === 'en' ? {
@@ -233,7 +229,7 @@ app.post('/api/forgot-password', (req, res) => {
     });
 });
 
-// ================= STUDENT REGISTRATION =================
+// STUDENT REGISTRATION
 app.get('/student-register', (req, res) => {
     const lang = req.query.lang === 'en' ? 'en' : 'am';
     const t = lang === 'en' ? {
@@ -372,7 +368,7 @@ app.get('/download-pending-slip/:id', (req, res) => {
     });
 });
 
-// ================= LOGIN =================
+// LOGIN
 app.post('/login', (req, res) => {
     const lang = req.query.lang || 'am';
     const { role, username, password } = req.body;
@@ -400,11 +396,13 @@ app.get('/admin', (req, res) => {
     const t = lang === 'en' ? {
         title: "Admin Dashboard", sec: "Manage Sections", pend: "Pending Registrations",
         teach: "Manage Teachers", courses: "Manage Courses", stud: "All Students",
-        noti: "Broadcast Notification to All Students", logout: "Logout"
+        noti: "Broadcast Notification to All Students", logout: "Logout",
+        directorReport: "📁 Director Weekly Reports (Friday Attendance)"
     } : {
         title: "የአድሚን መቆጣጠሪያ", sec: "ክፍሎችን ማስተዳደሪያ", pend: "አዲስ ተመዝጋቢዎች",
         teach: "መምህራንን ማስተዳደሪያ", courses: "ትምህርቶችን ማስተዳደሪያ", stud: "ሁሉም ተማሪዎች",
-        noti: "ለማንኛውም ተማሪ ማስታወቂያ ላክ (Broadcast)", logout: "ውጣ"
+        noti: "ለማንኛውም ተማሪ ማስታወቂያ ላክ (Broadcast)", logout: "ውጣ",
+        directorReport: "📁 የዳይሬክተር ሳምንታዊ ሪፖርት (የአርብ መገኘት)"
     };
 
     db.all(`SELECT * FROM pending_students`, [], (err, pending) => {
@@ -439,7 +437,10 @@ app.get('/admin', (req, res) => {
                                 <input type="text" name="monitor_phone" value="${esc(sec.monitor_phone)}" placeholder="Monitor Phone" style="width:110px;">
                                 <button type="submit">Save</button></form></td>
                             <td><a href="/admin/delete-section/${sec.id}?lang=${lang}" onclick="return confirm('Delete this section?')" style="color:red; font-weight:bold;">🗑️ Delete</a></td>
-                            <td><a href="/view-excel/${encodeURIComponent(sec.name)}" style="color:#27ae60; font-weight:bold;" target="_blank">📊 Excel View</a></td>
+                            <td>
+                                <a href="/attendance-sheet/${encodeURIComponent(sec.name)}" style="color:#2980b9; font-weight:bold; margin-right:10px;" target="_blank">📋 Attendance Sheet (1-50)</a>
+                                <a href="/view-excel/${encodeURIComponent(sec.name)}" style="color:#27ae60; font-weight:bold;" target="_blank">📊 Excel Grades</a>
+                            </td>
                             </tr>`).join('');
 
                         let sectionOptions = sections.map(sec => `<option value="${esc(sec.name)}">${sec.name}</option>`).join('');
@@ -463,6 +464,12 @@ app.get('/admin', (req, res) => {
                                 </form>
                             </div>
 
+                            <div class="card">
+                                <h3>${t.directorReport}</h3>
+                                <p style="font-size:13px; color:#555;">የአርብ አርብ የክፍል መገኘት ሪፖርት አጠናቅሮ ለዳይሬክተር ለማድረስ ከታች ያለውን ሊንክ ይጠቀሙ:</p>
+                                <a href="/director-report" target="_blank" style="background:#8e44ad; color:white; padding:10px 15px; text-decoration:none; border-radius:5px; font-weight:bold; display:inline-block;">📁 View Director Weekly Friday Report</a>
+                            </div>
+
                             <div class="card"><h3>${t.pend}</h3><table><tr><th>Photo</th><th>ID</th><th>Name</th><th>Payment</th><th>Action</th></tr>${pRows||'<tr><td colspan="5">None</td></tr>'}</table></div>
 
                             <div class="card">
@@ -473,7 +480,7 @@ app.get('/admin', (req, res) => {
                                     <input type="text" name="monitor_phone" placeholder="Monitor Phone">
                                     <button type="submit" style="background:#2980b9; color:white; border:none; padding:8px 14px; border-radius:5px;">➕ Add Section</button>
                                 </form>
-                                <table><tr><th>Section Name</th><th>Monitor Info</th><th>Delete</th><th>Excel Portal</th></tr>${secRows||'<tr><td colspan="4">None</td></tr>'}</table>
+                                <table><tr><th>Section Name</th><th>Monitor Info</th><th>Delete</th><th>Sheets & Portals</th></tr>${secRows||'<tr><td colspan="4">None</td></tr>'}</table>
                             </div>
 
                             <div class="card">
@@ -528,7 +535,126 @@ app.post('/admin/send-notification', (req, res) => {
         ['Admin', 'School Admin', 'ALL', req.body.message, new Date().toLocaleString()], () => res.redirect('/admin'));
 });
 
-// EXCEL-LIKE VIEW ROUTE FOR ADMIN & TEACHERS
+// ATTENDANCE SHEET (1 TO 50 STUDENTS EXCEL FORMAT WITH BLANK SPACES)
+app.get('/attendance-sheet/:secName', (req, res) => {
+    if (!req.session.isAdmin && !req.session.teacherId) return res.redirect('/');
+    let sec = decodeURIComponent(req.params.secName);
+    db.all(`SELECT * FROM students WHERE class_level = ? ORDER BY name`, [sec], (err, students) => {
+        
+        let rowsHtml = '';
+        let totalRows = 50; // Must hold up to 50 students/slots
+        
+        for (let i = 0; i < totalRows; i++) {
+            let st = students[i];
+            let num = i + 1;
+            if (st) {
+                rowsHtml += `<tr>
+                    <td>${num}</td>
+                    <td>${st.student_id}</td>
+                    <td style="text-align:left;">${st.name}</td>
+                    <td>${st.gender}</td>
+                    <td></td><td></td><td></td><td></td><td></td>
+                </tr>`;
+            } else {
+                // Blank rows up to 50
+                rowsHtml += `<tr>
+                    <td>${num}</td>
+                    <td>&nbsp;</td>
+                    <td>&nbsp;</td>
+                    <td>&nbsp;</td>
+                    <td></td><td></td><td></td><td></td><td></td>
+                </tr>`;
+            }
+        }
+
+        res.send(`
+        <!DOCTYPE html><html><head><meta charset="UTF-8"><title>Attendance Sheet - ${sec}</title>
+        <style>
+            body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 20px; background: #fff; }
+            .sheet-table { width: 100%; border-collapse: collapse; font-size:13px; }
+            .sheet-table th, .sheet-table td { border: 1px solid #000; padding: 5px 8px; text-align: center; height: 22px; }
+            .sheet-table th { background: #d9d9d9; color: #000; }
+            .header-bar { display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; }
+            button { background: #107c41; color: white; border: none; padding: 8px 15px; border-radius: 4px; cursor: pointer; font-weight:bold; }
+            @media print { button { display: none; } }
+        </style>
+        </head><body>
+            <div class="header-bar">
+                <div>
+                    <h2>AMANUEL LIGHT AND LIFE SCHOOL</h2>
+                    <h3>📋 Daily Attendance & Name Calling Sheet - Class: ${sec}</h3>
+                </div>
+                <div><button onclick="window.print()">🖨️ Print Sheet</button> <button onclick="window.close()">❌ Close</button></div>
+            </div>
+            <table class="sheet-table">
+                <tr>
+                    <th>No.</th>
+                    <th>Student ID</th>
+                    <th>Student Full Name</th>
+                    <th>Gender</th>
+                    <th>Day 1</th>
+                    <th>Day 2</th>
+                    <th>Day 3</th>
+                    <th>Day 4</th>
+                    <th>Day 5 (Friday/Director)</th>
+                </tr>
+                ${rowsHtml}
+            </table>
+            <br><br>
+            <div style="display:flex; justify-content:space-between; font-weight:bold;">
+                <p>Teacher's Signature: ______________________</p>
+                <p>Director's Signature (Friday): ______________________</p>
+            </div>
+        </body></html>`);
+    });
+});
+
+// DIRECTOR FRIDAY REPORT VIEW ROUTE
+app.get('/director-report', (req, res) => {
+    if (!req.session.isAdmin) return res.redirect('/');
+    db.all(`SELECT * FROM sections ORDER BY name`, [], (err, sections) => {
+        db.all(`SELECT * FROM students ORDER BY class_level`, [], (err, students) => {
+            
+            let reportContent = sections.map(sec => {
+                let classStudents = students.filter(s => s.class_level === sec.name);
+                let studentList = classStudents.map((s, idx) => `<tr><td>${idx+1}</td><td>${s.student_id}</td><td style="text-align:left;">${s.name}</td><td>Present / Absent</td></tr>`).join('');
+                
+                return `<div style="margin-bottom:30px; page-break-inside: avoid;">
+                    <h3 style="background:#2c3e50; color:white; padding:8px; margin:0;">Class: ${sec.name} (Total: ${classStudents.length})</h3>
+                    <table border="1" width="100%" style="border-collapse:collapse; text-align:center; font-size:13px;">
+                        <tr style="background:#f2f2f2;"><th>No</th><th>ID</th><th>Full Name</th><th>Friday Status (签到)</th></tr>
+                        ${studentList || '<tr><td colspan="4">No students in this section</td></tr>'}
+                    </table>
+                </div>`;
+            }).join('');
+
+            res.send(`
+            <!DOCTYPE html><html><head><meta charset="UTF-8"><title>Director Weekly Report</title>
+            <style>
+                body { font-family: sans-serif; padding: 20px; background: white; }
+                table th, table td { border: 1px solid #ccc; padding: 6px; }
+                .header { text-align: center; margin-bottom: 20px; }
+                button { background: #8e44ad; color: white; border: none; padding: 10px 20px; border-radius: 5px; font-weight: bold; cursor: pointer; }
+                @media print { button { display: none; } }
+            </style>
+            </head><body>
+                <div class="header">
+                    <h2>AMANUEL LIGHT AND LIFE SCHOOL</h2>
+                    <h3>📁 Weekly Friday Attendance Report for Director (የአርብ ሳምንታዊ የሪፖርት መዝገብ)</h3>
+                    <button onclick="window.print()">🖨️ Print Friday Report for Director</button>
+                </div>
+                ${reportContent}
+                <br><br>
+                <div style="display:flex; justify-content:space-between; font-weight:bold; margin-top:40px;">
+                    <p>Prepared by Registrar / Admin: ___________________</p>
+                    <p>Approved by Director: ___________________</p>
+                </div>
+            </body></html>`);
+        });
+    });
+});
+
+// EXCEL-LIKE GRADES VIEW
 app.get('/view-excel/:secName', (req, res) => {
     if (!req.session.isAdmin && !req.session.teacherId) return res.redirect('/');
     let sec = decodeURIComponent(req.params.secName);
@@ -558,7 +684,7 @@ app.get('/view-excel/:secName', (req, res) => {
         </style>
         </head><body>
             <div class="header-bar">
-                <h2>📊 Class: ${sec} (Total: ${students.length})</h2>
+                <h2>📊 Class Grades: ${sec} (Total: ${students.length})</h2>
                 <div><button onclick="window.print()">🖨️ Print / Save PDF</button> <button onclick="window.close()">❌ Close</button></div>
             </div>
             <table class="excel-table">
@@ -633,7 +759,7 @@ app.get('/admin/delete-student/:id', (req, res) => {
     });
 });
 
-// ---------- Teachers ----------
+// Teachers
 app.post('/admin/add-teacher', (req, res) => {
     if (!req.session.isAdmin) return res.redirect('/');
     let { name, dept, phone, assigned_section } = req.body;
@@ -764,7 +890,10 @@ app.get('/teacher-dashboard', (req, res) => {
                     <div style="font-family:sans-serif; padding:20px; max-width:900px; margin:auto;">
                         <div style="text-align:right;"><a href="/teacher-dashboard?lang=am">አማርኛ</a> | <a href="/teacher-dashboard?lang=en">English</a></div>
                         <h2><img src="/uploads/logo.jpg" onerror="this.style.display='none'" style="height: 40px; border-radius: 50%; vertical-align: middle; margin-right: 10px;">👨‍🏫 Teacher Portal: ${teacher.name} (${teacher.assigned_section})</h2>
-                        <a href="/view-excel/${encodeURIComponent(teacher.assigned_section)}" target="_blank" style="background:#107c41; color:white; padding:10px; display:inline-block; border-radius:5px; text-decoration:none; margin-bottom:15px; font-weight:bold;">📊 View Students in Excel Format</a>
+                        <div style="margin-bottom:15px;">
+                            <a href="/attendance-sheet/${encodeURIComponent(teacher.assigned_section)}" target="_blank" style="background:#2980b9; color:white; padding:10px; display:inline-block; border-radius:5px; text-decoration:none; margin-right:10px; font-weight:bold;">📋 Daily Attendance Sheet (1-50)</a>
+                            <a href="/view-excel/${encodeURIComponent(teacher.assigned_section)}" target="_blank" style="background:#107c41; color:white; padding:10px; display:inline-block; border-radius:5px; text-decoration:none; font-weight:bold;">📊 View Grades in Excel Format</a>
+                        </div>
 
                         <div style="display:flex; gap:20px; flex-wrap:wrap;">
                             <div style="background:#e8f4fd; padding:15px; border-radius:8px; margin-bottom:20px; flex:1; min-width:300px;">
@@ -800,7 +929,7 @@ app.get('/teacher-dashboard', (req, res) => {
                         <table border="1" width="100%" style="border-collapse:collapse; text-align:center; min-width:600px; background:white;">
                             <tr style="background:#eef2f5;"><th>ID</th><th>Name</th><th>Quiz(20)</th><th>Mid(30)</th><th>Final(50)</th><th>Total</th><th>Action</th></tr>
                             ${studentRows||'<tr><td colspan="7">No students</td></tr>'}
-                        </table></div><br><a href="/logout" style="color:red; font-weight:bold;">🔒 Logout</a>
+                        </table></div><br><a href="/logout" style="color:red; font-weight:bold; font-size:18px;">🔒 Logout</a>
                     </div>`);
                 });
             });
@@ -841,12 +970,14 @@ app.get('/student-dashboard', (req, res) => {
         dash: "🎓 Student Dashboard", msg: "Admin Message",
         cls: "Class", mon: "Monitor", idbtn: "📥 Download Digital ID",
         crs: "Registered Courses", asm: "Assessment & Grades",
-        abs: "⚠️ Request Absence (Notify Teacher)", absDesc: "Send this form at least 1 hour before class if you are sick or have a problem.", absBtn: "Send Request"
+        abs: "⚠️ Request Absence (Notify Teacher)", absDesc: "Send this form at least 1 hour before class if you are sick or have a problem.", absBtn: "Send Request",
+        updatePhoto: "📷 Update Profile Photo"
     } : {
         dash: "🎓 የተማሪ መቆጣጠሪያ", msg: "የአድሚን መልዕክት",
         cls: "ክፍል", mon: "ተቆጣጣሪ", idbtn: "📥 ዲጂታል መታወቂያ ያውርዱ",
         crs: "የተመዘገቡ ትምህርቶች", asm: "ውጤቶች",
-        abs: "⚠️ የቀሪነት/ፈቃድ ጥያቄ (ለመምህር ማሳወቂያ)", absDesc: "ካመመዎት ወይም ችግር ካጋጠመዎት ክፍል ከመጀመሩ ቢያንስ ከ1 ሰዓት በፊት ይህንን ቅጽ ይሙሉ::", absBtn: "ጥያቄውን ላክ"
+        abs: "⚠️ የቀሪነት/ፈቃድ ጥያቄ (ለመምህር ማሳወቂያ)", absDesc: "ካመመዎት ወይም ችግር ካጋጠመዎት ክፍል ከመጀመሩ ቢያንስ ከ1 ሰዓት በፊት ይህንን ቅጽ ይሙሉ::", absBtn: "ጥያቄውን ላክ",
+        updatePhoto: "📷 የፕሮፋይል ፎቶ ቀይር"
     };
 
     db.get(`SELECT s.*, a.quiz, a.mid, a.final, a.total, a.remark FROM students s LEFT JOIN assessments a ON s.student_id = a.student_id WHERE s.student_id = ?`, [req.session.studentId], (err, student) => {
@@ -874,9 +1005,15 @@ app.get('/student-dashboard', (req, res) => {
 
                             <div class="card" style="background:#d4edda; color:#155724;">📢 <b>${t.msg}:</b> ${student.admin_message}</div>
 
-                            <div class="card" style="display:flex; gap:20px; align-items:center;">
-                                <img src="/uploads/${student.photo}" style="width:100px; height:120px; object-fit:cover; border-radius:5px;">
+                            <div class="card" style="display:flex; gap:20px; align-items:center; flex-wrap:wrap;">
                                 <div>
+                                    <img src="/uploads/${student.photo}" style="width:100px; height:120px; object-fit:cover; border-radius:5px; display:block; margin-bottom:8px;">
+                                    <form action="/student/update-photo" method="POST" enctype="multipart/form-data">
+                                        <input type="file" name="new_photo" accept="image/*" required style="font-size:11px; width:130px; margin-bottom:4px;"><br>
+                                        <button type="submit" style="background:#2980b9; color:white; border:none; padding:4px 8px; border-radius:3px; cursor:pointer; font-size:11px;">${t.updatePhoto}</button>
+                                    </form>
+                                </div>
+                                <div style="flex:1;">
                                     <h3>${student.name} (${student.student_id})</h3>
                                     <p><b>${t.cls}:</b> ${student.class_level} | <b>${t.mon}:</b> ${monitor.monitor_name} (${monitor.monitor_phone})</p>
                                     <a href="/download-id-pdf/${student.student_id}" style="display:inline-block; padding:10px; background:#27ae60; color:white; text-decoration:none; border-radius:5px; font-weight:bold;">${t.idbtn}</a>
@@ -911,12 +1048,26 @@ app.get('/student-dashboard', (req, res) => {
     });
 });
 
+// STUDENT PHOTO UPDATE ROUTE
+app.post('/student/update-photo', upload.single('new_photo'), (req, res) => {
+    if (!req.session.studentId) return res.redirect('/');
+    if (req.file) {
+        let newPhotoFilename = req.file.filename;
+        db.run(`UPDATE students SET photo = ? WHERE student_id = ?`, [newPhotoFilename, req.session.studentId], () => {
+            res.redirect('/student-dashboard');
+        });
+    } else {
+        res.redirect('/student-dashboard');
+    }
+});
+
 app.post('/student/absence', (req, res) => {
     if (!req.session.studentId) return res.redirect('/');
     db.get('SELECT name, class_level FROM students WHERE student_id=?', [req.session.studentId], (err, st) => {
         if(st) {
+            let timestamp = new Date().toLocaleString(); // Contains Date and Time
             db.run(`INSERT INTO absence_requests (student_id, student_name, class_level, reason, created_at) VALUES (?, ?, ?, ?, ?)`, 
-            [req.session.studentId, st.name, st.class_level, req.body.reason, new Date().toLocaleString()], () => res.redirect('/student-dashboard'));
+            [req.session.studentId, st.name, st.class_level, `[${timestamp}] - ${req.body.reason}`, timestamp], () => res.redirect('/student-dashboard'));
         }
     });
 });
